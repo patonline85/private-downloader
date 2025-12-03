@@ -9,33 +9,28 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Super Downloader</title>
+    <title>Armbian 4K Downloader</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #222; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: #333; padding: 30px; border-radius: 16px; width: 90%; max-width: 450px; }
-        input, select, button { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: none; font-size: 16px; }
-        button { background: #0a84ff; color: white; font-weight: bold; cursor: pointer; }
-        button:hover { background: #0077e6; }
-        .badge { background: #444; padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #aaa; }
+        body { font-family: sans-serif; background: #1a1a1a; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #2d2d2d; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select { width: 100%; padding: 15px; margin-bottom: 15px; background: #444; border: 1px solid #555; color: white; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; background: #e50914; color: white; border: none; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 1.1em; }
+        button:hover { background: #b2070f; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 style="text-align:center">🚀 4K Downloader</h2>
+        <h2 style="text-align:center">SERVER DOWNLOADER</h2>
         <form method="POST" action="/download">
-            <input type="text" name="url" placeholder="Paste Link Youtube/FB/TikTok..." required>
-            
-            <label>Chọn chất lượng:</label>
+            <input type="text" name="url" placeholder="Dán link vào đây..." required>
             <select name="mode">
-                <option value="max_res">🌟 4K/2K Gốc (MKV) - Nét nhất (Cần VLC)</option>
-                <option value="safe_mp4">📱 1080p/720p (MP4) - Tương thích mọi iPhone</option>
-                <option value="audio">🎵 Nhạc (MP3)</option>
+                <option value="4k_mkv">🌟 4K GỐC (MKV) - Nét như lệnh Terminal</option>
+                <option value="iphone">📱 iPhone (MP4 1080p) - Convert (Lâu)</option>
+                <option value="mp3">🎵 MP3 (Audio)</option>
             </select>
-
-            <button type="submit" onclick="this.innerText='⏳ Server đang tải...'">Tải Ngay</button>
+            <button type="submit" onclick="this.innerText='⏳ Đang xử lý... (Đừng tắt)'">TẢI VỀ</button>
         </form>
-        <p class="badge">Core: yt-dlp | Server: Armbian</p>
     </div>
 </body>
 </html>
@@ -50,65 +45,52 @@ def download_video():
     url = request.form.get('url')
     mode = request.form.get('mode')
     
-    # Dọn dẹp file cũ
+    # Xóa file cũ trong /tmp
     for f in glob.glob('/tmp/*'):
         try: os.remove(f)
         except: pass
 
-    # Cấu hình cốt lõi
     ydl_opts = {
-        'outtmpl': '/tmp/video_download.%(ext)s',
+        'outtmpl': '/tmp/video.%(ext)s',
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
         'ffmpeg_location': '/usr/bin/ffmpeg',
         'quiet': False,
-        # Giả lập Android để lấy được luồng 4K ngon nhất
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-        'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36'}
+        # Sửa lại Client giả lập để tránh warning
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
-    # --- LOGIC CHỌN FILE ---
-    
-    if mode == 'max_res':
-        # CHẾ ĐỘ 4K (Dựa trên log của bạn: ID 313/401 + Audio)
+    if mode == '4k_mkv':
+        # Cấu hình y hệt lệnh terminal bạn chạy thành công
         ydl_opts.update({
-            # Lấy Video tốt nhất (bất kể codec) + Audio tốt nhất
             'format': 'bestvideo+bestaudio/best',
-            # Gói vào MKV (Container này chứa được mọi loại codec 4K mà không cần convert)
-            'merge_output_format': 'mkv', 
+            'merge_output_format': 'mkv' 
         })
-        
-    elif mode == 'safe_mp4':
-        # CHẾ ĐỘ IPHONE (Chỉ lấy tối đa 1080p để đảm bảo là MP4 hịn)
+    elif mode == 'iphone':
         ydl_opts.update({
-            # Lấy video MP4 tốt nhất (thường là 1080p ID 137 hoặc 720p) + Audio M4A
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'merge_output_format': 'mp4',
+            'merge_output_format': 'mp4'
         })
-        
-    elif mode == 'audio':
+    elif mode == 'mp3':
         ydl_opts.update({
             'format': 'bestaudio/best',
-            'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
+            'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]
         })
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
             
-        # Tìm file vừa tải
-        list_of_files = glob.glob('/tmp/*')
-        # Lọc bỏ cookies.txt ra khỏi danh sách tìm kiếm
-        files_video = [f for f in list_of_files if not f.endswith('.txt')]
+        # Tìm file video (tránh file cookies)
+        files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt')]
+        if not files: return "Lỗi: Không tìm thấy file.", 500
         
-        if not files_video:
-            return "❌ Lỗi: Server tải xong nhưng không thấy file.", 500
-            
-        latest_file = max(files_video, key=os.path.getctime)
+        # Lấy file mới nhất
+        latest_file = max(files, key=os.path.getctime)
         return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
-        return f"<h3>❌ Lỗi: {str(e)}</h3><button onclick='history.back()'>Quay lại</button>", 500
+        return f"<h3>Lỗi: {str(e)}</h3>", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
