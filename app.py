@@ -6,24 +6,18 @@ import subprocess
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
-# --- KHU VỰC CẤU HÌNH MÔI TRƯỜNG (CRITICAL FIX) ---
-# Vì lệnh 'which node' của bạn trả về: /usr/bin/node
-# Nên thư mục cần thêm vào PATH là: /usr/bin
+# --- KHU VỰC CẤU HÌNH MÔI TRƯỜNG ---
+# 1. Ép Path trỏ thẳng vào /usr/bin (nơi chứa node xịn)
+os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
 
-# 1. Ép cứng thư mục /usr/bin vào biến môi trường PATH
-if '/usr/bin' not in os.environ['PATH']:
-    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
-
-print(f"✅ PATH FINAL: {os.environ['PATH']}")
-
-# 2. Test thử xem Python gọi được Node chưa (để in ra log cho yên tâm)
+# 2. In ra log để kiểm tra lần cuối
 try:
-    # Gọi thẳng lệnh node -v để kiểm tra
-    node_ver = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
-    print(f"🎉 SUCCESS: Python đã kết nối được NodeJS: {node_ver}")
-except Exception as e:
-    print(f"❌ ERROR: Python vẫn chưa gọi được Node. Lỗi: {str(e)}")
-# --------------------------------------------------
+    # Lệnh này sẽ in ra version node mà Python nhìn thấy
+    real_version = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
+    print(f"✅ FINAL CHECK: Python sees Node version: {real_version}")
+except:
+    print("❌ STILL ERROR: Python cannot see Node.")
+# ------------------------------------
 
 app = Flask(__name__)
 
@@ -203,6 +197,8 @@ def analyze():
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
+            # Xóa cache cũ để tránh lưu lại cái Node fake
+            ydl.cache.remove()
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
 
