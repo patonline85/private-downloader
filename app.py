@@ -209,23 +209,26 @@ def stream_download():
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
 
-        # --- CẤU HÌNH QUAN TRỌNG ĐỂ SỬA LỖI 4K ---
+        # --- CẤU HÌNH FIX LỖI "FORMAT NOT AVAILABLE" ---
         ydl_opts = {
             'outtmpl': '/tmp/%(title)s.%(ext)s',
             'trim_file_name': 200,
             'restrictfilenames': False,
             'noplaylist': True,
-            'cookiefile': 'cookies.txt',
+            # 'cookiefile': 'cookies.txt', # TẠM THỜI TẮT COOKIES ĐỂ TRÁNH BỊ FLAGGED
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
             'progress_hooks': [progress_hook],
-            # FIX: Giả lập iPhone để lấy luồng 4K chuẩn hơn và tránh bị Youtube chặn về SD
-            'extractor_args': {'youtube': {'player_client': ['ios']}},
-            'http_headers': {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1'}
+            # XÓA dòng 'extractor_args': ... 'ios' vì đôi khi nó gây lỗi định dạng với một số video
+            # Dùng User-Agent chung chung an toàn hơn
+            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         }
 
+        # --- LOGIC CHỌN ĐỊNH DẠNG "FAIL-SAFE" ---
         if mode == 'mp4_convert':
-            ydl_opts.update({
+             ydl_opts.update({
+                # Ý nghĩa: Cố lấy Video H.264 + Audio M4A. 
+                # Dấu "/" nghĩa là: Nếu không có, thì lấy file MP4 đơn (b).
                 'format': 'bv*[vcodec^=avc]+ba[ext=m4a]/b[ext=mp4]/b',
                 'merge_output_format': 'mp4'
             })
@@ -235,17 +238,22 @@ def stream_download():
                 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
             })
         else: 
-            # MODE GỐC: Ưu tiên MKV để chứa được 4K VP9/AV1
+            # MODE GỐC (Original)
+            # Ý nghĩa: bv*+ba (Tải rời ghép lại). Dấu "/" là cứu cánh: Nếu thất bại, lấy "best" (file đơn tốt nhất).
             ydl_opts.update({
-                'format': 'bestvideo+bestaudio/best',
-                'merge_output_format': 'mkv' # BẮT BUỘC MKV để giữ 4K
+                'format': 'bv*+ba/b', 
+                'merge_output_format': 'mkv' # Ưu tiên đóng gói MKV nếu ghép được
             })
 
         try:
             with YoutubeDL(ydl_opts) as ydl:
-                ydl.extract_info(url, download=True)
+                # Bước 1: Thử lấy info trước xem có bị chặn không (Optional nhưng an toàn)
+                # info = ydl.extract_info(url, download=False)
+                
+                # Bước 2: Tải thật
+                ydl.download([url])
             
-            # Tìm file kết quả (Loại trừ các file rác)
+            # Tìm file kết quả
             files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part') and not f.endswith('.ytdl')]
             
             if files:
@@ -253,11 +261,14 @@ def stream_download():
                 filename = os.path.basename(final_file)
                 yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
             else:
-                yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tìm thấy file sau khi tải.'}) + "\n"
+                yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tạo được file cuối cùng.'}) + "\n"
 
         except Exception as e:
-            # Báo lỗi chi tiết để debug
-            yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
+            # Clean up lỗi cho dễ đọc
+            error_msg = str(e)
+            if "Requested format is not available" in error_msg:
+                error_msg = "Video này chặn tải chất lượng cao (DRM hoặc IP Server bị chặn). Hệ thống đã thử tải SD nhưng thất bại."
+            yield json.dumps({'status': 'error', 'message': error_msg}) + "\n"
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
@@ -270,3 +281,4 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
