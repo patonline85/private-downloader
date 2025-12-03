@@ -1,21 +1,17 @@
-# Dùng Python 3.11 Bookworm (Debian 12)
 FROM python:3.11-bookworm
 
-# 1. Cài đặt NodeJS v20 chuẩn từ NodeSource
+# 1. Cài đặt các công cụ
 RUN apt-get update && \
     apt-get install -y curl gnupg git ffmpeg && \
-    mkdir -p /etc/apt/keyrings && \
+    apt-get clean
+
+# 2. Cài đặt NodeJS v20 (Bản chuẩn từ NodeSource)
+# NodeSource tự động tạo file /usr/bin/node chuẩn, KHÔNG CẦN link tay nữa
+RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
-    apt-get install -y nodejs && \
-    apt-get clean
-
-# 2. --- BÀN TAY SẮT: XỬ LÝ XUNG ĐỘT TÊN GỌI ---
-# Xóa file /usr/bin/node cũ (nếu là cái node fake)
-# Tạo link cứng từ nodejs sang node để không bao giờ nhầm nữa
-RUN rm -f /usr/bin/node && \
-    ln -s /usr/bin/nodejs /usr/bin/node
+    apt-get install -y nodejs
 
 # 3. Setup Python
 WORKDIR /app
