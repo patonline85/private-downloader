@@ -1,25 +1,22 @@
-FROM python:3.11-bookworm
+# Dùng Python 3.11 mới hơn để yt-dlp chạy mượt
+FROM python:3.11-slim
 
-# 1. Cài đặt NodeJS v20 từ nguồn chính hãng NodeSource
-# (Dùng script setup chuẩn để tránh lỗi)
-RUN apt-get update && apt-get install -y curl gnupg git ffmpeg && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean
+# Cài FFmpeg
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
-# 2. --- QUAN TRỌNG: Ép biến môi trường PATH ---
-# Dòng này đảm bảo Gunicorn nhìn thấy /usr/bin/node
-ENV PATH="/usr/bin:${PATH}"
-
-# 3. Setup Ứng dụng
 WORKDIR /app
-RUN pip install --no-cache-dir Flask gunicorn
-# Cài bản mới nhất của yt-dlp
-RUN pip install --no-cache-dir --force-reinstall git+https://github.com/yt-dlp/yt-dlp.git@master
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Chạy quyền Root
+# Chạy với quyền Root để tránh lỗi Permission file cookies (như đã bàn)
 USER root
+
 EXPOSE 5000
+
+# Tăng timeout lên 600s (10 phút) để tải video dài không bị ngắt
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "600", "app:app"]
