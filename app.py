@@ -3,36 +3,35 @@ import glob
 import json
 import time
 import subprocess
+import shutil
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
 # --- KHU VỰC DEBUG & FIX MÔI TRƯỜNG (SYSTEM DIAGNOSTICS) ---
-print("--- BẮT ĐẦU KIỂM TRA MÔI TRƯỜNG GUNICORN ---")
+print("--- BẮT ĐẦU KIỂM TRA MÔI TRƯỜNG ---")
 
-# 1. Ép thêm các đường dẫn chuẩn Linux vào biến môi trường
-# Đây là liều thuốc chữa bệnh "Gunicorn không thấy Node"
-standard_paths = ["/usr/bin/node", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin"]
+# 1. Tìm chính xác node đang nằm ở đâu bằng lệnh hệ thống
+# Lệnh 'which' sẽ trả về đường dẫn file (VD: /usr/bin/node)
+node_location = shutil.which('node') or '/usr/bin/node' 
+
+# 2. Lấy THƯ MỤC cha của file đó (VD: /usr/bin)
+node_dir = os.path.dirname(node_location)
+
+# 3. Thêm THƯ MỤC đó vào biến môi trường PATH
+# Nếu ta không thêm thư mục, yt-dlp sẽ không gọi được lệnh 'node'
 current_path = os.environ.get('PATH', '')
+if node_dir not in current_path:
+    os.environ['PATH'] = node_dir + os.pathsep + current_path
 
-for p in standard_paths:
-    if p not in current_path:
-        current_path = p + ":" + current_path
+print(f"✅ NODE LOCATION: {node_location}")
+print(f"✅ PATH UPDATED: {os.environ['PATH']}")
 
-os.environ['PATH'] = current_path
-print(f"✅ PATH đã cập nhật: {os.environ['PATH']}")
-
-# 2. Kiểm tra thực tế xem Python có gọi được Node không
+# 4. Test thử xem Python gọi được Node chưa
 try:
-    node_version = subprocess.check_output(["node", "-v"]).decode().strip()
-    print(f"✅ NODEJS FOUND: {node_version}")
+    version = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
+    print(f"🎉 SUCCESS: Python đã nhìn thấy NodeJS phiên bản: {version}")
 except Exception as e:
-    print(f"❌ NODEJS ERROR: Không thể gọi lệnh 'node'. Lỗi: {str(e)}")
-    # Fallback: Thử tìm bằng lệnh which
-    try:
-        node_loc = subprocess.check_output(["which", "node"]).decode().strip()
-        print(f"⚠️ 'which node' trả về: {node_loc}")
-    except:
-        print("☠️ 'which node' cũng thất bại.")
+    print(f"❌ FATAL ERROR: Python vẫn không gọi được Node. Lỗi: {str(e)}")
 
 print("--- KẾT THÚC KIỂM TRA ---")
 # -----------------------------------------------------------
@@ -209,7 +208,6 @@ def analyze():
         'quiet': True,
         'skip_download': True,
         'ffmpeg_location': '/usr/bin/ffmpeg', 
-        # Sử dụng Web Client (đã có NodeJS để giải mã)
         'extractor_args': {'youtube': {'player_client': ['web']}},
     }
 
