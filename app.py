@@ -25,9 +25,9 @@ HTML_TEMPLATE = """
         <form method="POST" action="/download">
             <input type="text" name="url" placeholder="Dán link vào đây..." required>
             <select name="mode">
-                <option value="4k_mkv">🌟 4K GỐC (MKV) - Nét như lệnh Terminal</option>
+                <option value="4k_mkv">🌟 4K GỐC (MKV) - Giữ tên gốc & Chất lượng</option>
                 <option value="iphone">📱 iPhone (MP4 1080p) - Convert (Lâu)</option>
-                <option value="mp3">🎵 MP3 (Audio)</option>
+                <option value="mp3">🎵 MP3 (Audio) - Tách nhạc</option>
             </select>
             <button type="submit" onclick="this.innerText='⏳ Đang xử lý... (Đừng tắt)'">TẢI VỀ</button>
         </form>
@@ -45,25 +45,30 @@ def download_video():
     url = request.form.get('url')
     mode = request.form.get('mode')
     
-    # Xóa file cũ trong /tmp
+    # 1. Dọn dẹp file cũ trong /tmp
+    # Rất quan trọng để tìm đúng file vừa tải
     for f in glob.glob('/tmp/*'):
         try: os.remove(f)
         except: pass
 
+    # Cấu hình chung
     ydl_opts = {
-        'outtmpl': '/tmp/video.%(ext)s',
+        # Sửa lại: Dùng tên gốc của video (Title)
+        'outtmpl': '/tmp/%(title)s.%(ext)s',
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
         'ffmpeg_location': '/usr/bin/ffmpeg',
         'quiet': False,
-        # Sửa lại Client giả lập để tránh warning
+        # Tăng kích thước buffer để tải 4K ổn định hơn
+        'buffersize': 1024 * 1024, 
         'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     if mode == '4k_mkv':
-        # Cấu hình y hệt lệnh terminal bạn chạy thành công
         ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',
+            # QUAN TRỌNG: Xóa bỏ "/best" để không bao giờ fallback về MP4 chất lượng thấp
+            # Bắt buộc phải tìm được Video riêng và Audio riêng để ghép
+            'format': 'bestvideo+bestaudio', 
             'merge_output_format': 'mkv' 
         })
     elif mode == 'iphone':
@@ -81,16 +86,27 @@ def download_video():
         with YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
             
-        # Tìm file video (tránh file cookies)
+        # Tìm file vừa tải xong
+        # Logic: Lấy tất cả file trong /tmp trừ cookies.txt
         files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt')]
-        if not files: return "Lỗi: Không tìm thấy file.", 500
         
-        # Lấy file mới nhất
+        if not files:
+            return "<h3>Lỗi: Không tìm thấy file tải về. Có thể Video này không có 4K hoặc bị Youtube chặn.</h3>", 500
+        
+        # Lấy file mới nhất (vừa được tạo ra)
+        # Cách này đảm bảo lấy đúng file dù tên nó là gì
         latest_file = max(files, key=os.path.getctime)
+        
+        # Gửi file về với tên gốc
         return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
-        return f"<h3>Lỗi: {str(e)}</h3>", 500
+        return f"""
+        <h3>❌ Lỗi tải về:</h3>
+        <p>{str(e)}</p>
+        <p><i>Gợi ý: Nếu lỗi "Requested format is not available", nghĩa là video này không có định dạng 4K tách rời. Hãy thử chọn chế độ iPhone.</i></p>
+        <button onclick="history.back()">Quay lại</button>
+        """, 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
