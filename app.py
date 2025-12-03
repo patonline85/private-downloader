@@ -8,7 +8,7 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# --- GIAO DIỆN HTML + JAVASCRIPT (Đã tích hợp xử lý Stream) ---
+# --- GIAO DIỆN HTML (Giữ nguyên thanh tiến trình) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -24,7 +24,6 @@ HTML_TEMPLATE = """
         button:hover { background: #0056b3; }
         button:disabled { background: #555; cursor: not-allowed; }
         
-        /* CSS cho thanh tiến trình */
         .progress-container { margin-top: 20px; display: none; }
         .progress-bar-bg { width: 100%; background-color: #333; border-radius: 10px; overflow: hidden; height: 20px; }
         .progress-bar-fill { height: 100%; width: 0%; background-color: #28a745; transition: width 0.3s ease; }
@@ -65,57 +64,46 @@ HTML_TEMPLATE = """
     <script>
         document.getElementById('dlForm').onsubmit = async function(e) {
             e.preventDefault();
-            
             const btn = document.getElementById('submitBtn');
             const progressArea = document.getElementById('progressArea');
             const progressBar = document.getElementById('progressBar');
             const statusText = document.getElementById('statusText');
             const downloadArea = document.getElementById('downloadArea');
             
-            // Reset UI
             btn.disabled = true;
             downloadArea.style.display = 'none';
             progressArea.style.display = 'block';
             progressBar.style.width = '0%';
-            statusText.innerText = 'Đang khởi động yt-dlp...';
+            statusText.innerText = 'Đang khởi động...';
             
             const formData = new FormData();
             formData.append('url', document.getElementById('url').value);
             formData.append('mode', document.getElementById('mode').value);
 
             try {
-                // Gửi request STREAM
-                const response = await fetch('/stream_download', {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch('/stream_download', { method: 'POST', body: formData });
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) break;
-                    
                     const chunk = decoder.decode(value);
                     const lines = chunk.split('\\n');
-                    
                     for (const line of lines) {
                         if (!line.trim()) continue;
                         try {
                             const data = JSON.parse(line);
-                            
                             if (data.status === 'downloading') {
                                 progressBar.style.width = data.percent + '%';
                                 statusText.innerText = `Đang tải: ${data.percent}% | Tốc độ: ${data.speed || '...'}`;
                             } else if (data.status === 'merging') {
                                 progressBar.style.width = '99%';
-                                progressBar.style.backgroundColor = '#ffc107'; // Màu vàng
+                                progressBar.style.backgroundColor = '#ffc107'; 
                                 statusText.innerText = 'Đang ghép file (Merge)... Vui lòng đợi!';
                             } else if (data.status === 'finished') {
                                 progressBar.style.width = '100%';
                                 statusText.innerText = 'Hoàn tất!';
-                                // Hiện nút tải về
                                 document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename);
                                 downloadArea.style.display = 'block';
                                 btn.disabled = false;
@@ -124,7 +112,7 @@ HTML_TEMPLATE = """
                                 statusText.style.color = 'red';
                                 btn.disabled = false;
                             }
-                        } catch (err) { console.log('Parse error', err); }
+                        } catch (err) {}
                     }
                 }
             } catch (error) {
@@ -141,25 +129,20 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-# --- XỬ LÝ LOGIC TẢI VÀ STREAM TIẾN TRÌNH ---
 @app.route('/stream_download', methods=['POST'])
 def stream_download():
     url = request.form.get('url')
     mode = request.form.get('mode')
 
     def generate():
-        # Dọn dẹp file cũ
         for f in glob.glob('/tmp/*'):
             try: os.remove(f)
             except: pass
 
-        # Hook để bắt tiến trình của yt-dlp
         def progress_hook(d):
             if d['status'] == 'downloading':
-                # Tính phần trăm
                 p = d.get('_percent_str', '0%').replace('%','')
                 s = d.get('_speed_str', 'N/A')
-                # Gửi data JSON về client
                 yield json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
@@ -170,42 +153,49 @@ def stream_download():
             'noplaylist': True,
             'cookiefile': 'cookies.txt',
             'ffmpeg_location': '/usr/bin/ffmpeg',
-            'quiet': True, # Tắt log rác
-            'progress_hooks': [progress_hook], # Gắn hook vào đây
-            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+            'quiet': True,
+            'progress_hooks': [progress_hook],
+            
+            # --- KHẮC PHỤC LỖI PO TOKEN TẠI ĐÂY ---
+            # Thay vì dùng 'android'/'ios' (bị lỗi), ta dùng 'web' (Trình duyệt máy tính)
+            # Kết hợp với cookies.txt thì 'web' vẫn tải được 4K bình thường.
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web'], 
+                    'player_skip': ['webpage', 'configs', 'js'], 
+                }
+            },
         }
 
         if mode == '4k_mkv':
+            # Chế độ 4K MKV
             ydl_opts.update({'format': 'bestvideo+bestaudio', 'merge_output_format': 'mkv'})
         elif mode == 'safe_mp4':
+            # Chế độ iPhone
             ydl_opts.update({'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 'merge_output_format': 'mp4'})
         elif mode == 'mp3':
+            # Chế độ Nhạc
             ydl_opts.update({'format': 'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]})
 
         try:
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.extract_info(url, download=True)
             
-            # Tìm tên file kết quả
             files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part')]
             if files:
                 final_file = max(files, key=os.path.getctime)
-                filename_only = os.path.basename(final_file)
-                # Báo cho client biết đã xong và tên file là gì
-                yield json.dumps({'status': 'finished', 'filename': filename_only}) + "\n"
+                yield json.dumps({'status': 'finished', 'filename': os.path.basename(final_file)}) + "\n"
             else:
                 yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file sau khi tải'}) + "\n"
 
         except Exception as e:
+            # Gửi lỗi chi tiết về client để dễ debug
             yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
 
-    # Trả về Response dạng Stream
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
-# --- API ĐỂ TRÌNH DUYỆT TẢI FILE VỀ ---
 @app.route('/get_file/<filename>')
 def get_file(filename):
-    # Bảo mật: Chỉ cho phép tải từ /tmp
     safe_path = os.path.join('/tmp', filename)
     if os.path.exists(safe_path):
         return send_file(safe_path, as_attachment=True)
