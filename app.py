@@ -3,21 +3,29 @@ import glob
 import json
 import time
 import subprocess
+import shutil
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
-# --- KHU VỰC CẤU HÌNH MÔI TRƯỜNG ---
-# 1. Ép Path trỏ thẳng vào /usr/bin (nơi chứa node xịn)
-os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
+# --- KHU VỰC DEBUG & FIX PATH ---
+# 1. Ép Path /usr/bin (nơi chứa Node) vào đầu tiên
+if '/usr/bin' not in os.environ['PATH']:
+    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
 
-# 2. In ra log để kiểm tra lần cuối
+# 2. Xóa sạch cache của yt-dlp ngay khi khởi động
+print("🧹 Đang dọn dẹp Cache cũ...")
 try:
-    # Lệnh này sẽ in ra version node mà Python nhìn thấy
-    real_version = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
-    print(f"✅ FINAL CHECK: Python sees Node version: {real_version}")
-except:
-    print("❌ STILL ERROR: Python cannot see Node.")
-# ------------------------------------
+    shutil.rmtree('/root/.cache/yt-dlp', ignore_errors=True)
+    shutil.rmtree('/var/tmp/yt-dlp_cache', ignore_errors=True)
+except: pass
+
+# 3. Kiểm tra Node lần cuối
+try:
+    node_ver = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
+    print(f"✅ FINAL CHECK - NODE VERSION: {node_ver}")
+except Exception as e:
+    print(f"❌ NODE ERROR: {str(e)}")
+# --------------------------------
 
 app = Flask(__name__)
 
@@ -191,14 +199,13 @@ def analyze():
         'quiet': True,
         'skip_download': True,
         'ffmpeg_location': '/usr/bin/ffmpeg', 
-        # Sử dụng Web Client (đã có NodeJS để giải mã)
         'extractor_args': {'youtube': {'player_client': ['web']}},
+        # Tắt cache để tránh lỗi cũ
+        'cachedir': False,
     }
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # Xóa cache cũ để tránh lưu lại cái Node fake
-            ydl.cache.remove()
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
 
@@ -258,7 +265,8 @@ def download_custom():
             'progress_hooks': [progress_hook],
             'extractor_args': {'youtube': {'player_client': ['web']}},
             'format': f"{vid_id}+{aud_id}",
-            'merge_output_format': 'mp4' 
+            'merge_output_format': 'mp4',
+            'cachedir': False, # Tắt cache khi tải thật
         }
 
         try:
