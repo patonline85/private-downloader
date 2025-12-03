@@ -1,9 +1,10 @@
 # Dùng Python 3.11
 FROM python:3.11-slim
 
-# Cài FFmpeg VÀ NodeJS (Chìa khóa để fix lỗi)
+# Cài FFmpeg VÀ NodeJS (BẮT BUỘC ĐỂ GIẢI MÃ LINK YOUTUBE)
 RUN apt-get update && \
     apt-get install -y ffmpeg nodejs npm && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
