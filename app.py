@@ -5,7 +5,7 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# Giao diện HTML (Giữ nguyên, chỉ chỉnh lại script tải cho mượt)
+# Giao diện HTML (Giữ nguyên như bản ổn định bạn gửi)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -67,8 +67,13 @@ def download_video():
 
     # Cấu hình cơ bản
     ydl_opts = {
-        # Đặt tên file đơn giản để tránh lỗi ký tự đặc biệt
-        'outtmpl': '/tmp/video_download.%(ext)s', 
+        # --- CẬP NHẬT QUAN TRỌNG: SỬA TÊN FILE ---
+        # Dùng %(title)s để lấy tên gốc của video
+        # restrictfilenames=True sẽ tự động bỏ dấu tiếng Việt và ký tự lạ để tránh lỗi file
+        'outtmpl': '/tmp/%(title)s.%(ext)s', 
+        'restrictfilenames': True,
+        # -----------------------------------------
+        
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
         'ffmpeg_location': '/usr/bin/ffmpeg',
@@ -140,8 +145,8 @@ def download_video():
              else:
                  return "❌ Lỗi: Chỉ thấy file cookies, không thấy video.", 500
 
-        # Đổi tên file tải về cho đẹp (Option)
-        # return send_file(latest_file, as_attachment=True, download_name="video_downloadED" + os.path.splitext(latest_file)[1])
+        # Gửi file về với tên gốc đã được yt-dlp đặt
+        # Flask sẽ tự động lấy tên file từ đường dẫn latest_file
         return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
