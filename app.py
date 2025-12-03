@@ -7,16 +7,23 @@ import shutil
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
-# --- KHỞI ĐỘNG KIỂM TRA ---
+# --- KHỞI ĐỘNG HỆ THỐNG ---
 print("--- SYSTEM CHECK ---")
+# 1. Ép Path chuẩn Linux vào môi trường Python
+if '/usr/bin' not in os.environ['PATH']:
+    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
+
+# 2. Xóa sạch cache cũ
 try:
-    # Kiểm tra Node có sẵn sàng không
+    shutil.rmtree('/root/.cache/yt-dlp', ignore_errors=True)
+except: pass
+
+# 3. Kiểm tra Node
+try:
     node_v = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
     print(f"✅ NODEJS READY: {node_v}")
 except Exception as e:
-    print(f"❌ NODEJS MISSING: {e}")
-    # Nếu lỗi, thử thêm path thủ công (phòng hờ)
-    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
+    print(f"❌ NODEJS ERROR: {e}")
 # -------------------------
 
 app = Flask(__name__)
@@ -179,111 +186,10 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/', methods=['GET'])
-def index():
-    return render_template_string(HTML_TEMPLATE)
+### Bước 3: Triển khai lại
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    url = request.form.get('url')
-    ydl_opts = {
-        'cookiefile': 'cookies.txt',
-        'quiet': True,
-        'skip_download': True,
-        'ffmpeg_location': '/usr/bin/ffmpeg', 
-        # Sử dụng Web Client (đã có NodeJS để giải mã)
-        'extractor_args': {'youtube': {'player_client': ['web']}},
-        # Tắt cache để tránh lỗi cũ
-        'cachedir': False,
-    }
+1.  Vào **Stack** > **Pull and redeploy**.
+2.  **BẬT** nút **Re-pull image / force build**.
+3.  Bấm **Update**.
 
-    try:
-        with YoutubeDL(ydl_opts) as ydl:
-            # Xóa cache bằng tay cho chắc chắn
-            ydl.cache.remove()
-            info = ydl.extract_info(url, download=False)
-            formats = info.get('formats', [])
-
-        video_opts = []
-        audio_opts = []
-
-        for f in formats:
-            if f.get('vcodec') != 'none' and f.get('acodec') == 'none':
-                filesize = f.get('filesize') or f.get('filesize_approx') or 0
-                video_opts.append({
-                    'id': f['format_id'],
-                    'res': f.get('format_note') or f"{f.get('height')}p",
-                    'ext': f['ext'],
-                    'codec': f['vcodec'],
-                    'fps': f.get('fps', 30),
-                    'filesize': f"{round(filesize / 1024 / 1024, 1)} MB" if filesize else "N/A"
-                })
-            elif f.get('acodec') != 'none' and f.get('vcodec') == 'none':
-                filesize = f.get('filesize') or f.get('filesize_approx') or 0
-                audio_opts.append({
-                    'id': f['format_id'],
-                    'ext': f['ext'],
-                    'codec': f['acodec'],
-                    'abr': int(f.get('abr') or 0),
-                    'filesize': f"{round(filesize / 1024 / 1024, 1)} MB" if filesize else "N/A"
-                })
-        video_opts.reverse(); audio_opts.reverse()
-        return jsonify({'videos': video_opts, 'audios': audio_opts})
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/download_custom', methods=['POST'])
-def download_custom():
-    url = request.form.get('url')
-    vid_id = request.form.get('video_id')
-    aud_id = request.form.get('audio_id')
-
-    def generate():
-        for f in glob.glob('/tmp/*'):
-            try: os.remove(f)
-            except: pass
-
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                p = d.get('_percent_str', '0%').replace('%','')
-                s = d.get('_speed_str', 'N/A')
-                yield json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
-            elif d['status'] == 'finished':
-                yield json.dumps({'status': 'merging'}) + "\n"
-
-        ydl_opts = {
-            'outtmpl': '/tmp/%(title)s.%(ext)s',
-            'restrictfilenames': True,
-            'cookiefile': 'cookies.txt',
-            'ffmpeg_location': '/usr/bin/ffmpeg',
-            'quiet': True,
-            'progress_hooks': [progress_hook],
-            'extractor_args': {'youtube': {'player_client': ['web']}},
-            'format': f"{vid_id}+{aud_id}",
-            'merge_output_format': 'mp4',
-            'cachedir': False,
-        }
-
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.extract_info(url, download=True)
-            files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part')]
-            if files:
-                final_file = max(files, key=os.path.getctime)
-                yield json.dumps({'status': 'finished', 'filename': os.path.basename(final_file)}) + "\n"
-            else:
-                yield json.dumps({'status': 'error', 'message': 'Không thấy file'}) + "\n"
-        except Exception as e:
-            yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
-
-    return Response(stream_with_context(generate()), mimetype='text/plain')
-
-@app.route('/get_file/<filename>')
-def get_file(filename):
-    safe_path = os.path.join('/tmp', filename)
-    if os.path.exists(safe_path):
-        return send_file(safe_path, as_attachment=True)
-    return "Not Found", 404
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+Lần này quá trình Build sẽ diễn ra suôn sẻ vì mình đã xóa các lệnh gây hại rồi. Chờ 1 chút là Web App sẽ sống lại!
