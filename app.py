@@ -5,7 +5,7 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# Giao diện HTML nâng cấp với Menu chọn định dạng
+# Giao diện HTML (Giữ nguyên, chỉ chỉnh lại script tải cho mượt)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -23,35 +23,27 @@ HTML_TEMPLATE = """
         button { background: #007aff; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: 0.2s; }
         button:hover { background: #005bb5; }
         .note { font-size: 12px; color: #888; margin-top: 20px; text-align: center; line-height: 1.5; }
-        .badge { background: #eee; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>🚀 Server Downloader</h2>
         <form method="POST" action="/download">
-            
             <div class="input-group">
                 <label>Dán Link Video (Youtube/FB/TikTok):</label>
                 <input type="text" name="url" placeholder="https://..." required>
             </div>
-
             <div class="input-group">
                 <label>Chọn Chế Độ Tải:</label>
                 <select name="mode">
-                    <option value="original">⚡ Gốc (4K/MKV) - Nhanh nhất (Cần VLC)</option>
-                    <option value="mp4_convert">🍎 iPhone Chuẩn (MP4) - Tốn CPU Convert</option>
+                    <option value="original">⚡ Gốc (Auto Best) - An toàn nhất</option>
+                    <option value="mp4_convert">🍎 iPhone Chuẩn (MP4) - Ép Convert</option>
                     <option value="audio_only">🎵 Chỉ lấy Audio (MP3)</option>
                 </select>
             </div>
-
-            <button type="submit" onclick="this.innerText='⏳ Đang xử lý trên Server...'">Tải Về Ngay</button>
+            <button type="submit" onclick="this.innerText='⏳ Đang xử lý... (Đừng tắt)'">Tải Về Ngay</button>
         </form>
-        <p class="note">
-            • <b>Gốc:</b> Giữ nguyên chất lượng 4K/8K. iPhone cần cài app VLC/Infuse để xem.<br>
-            • <b>iPhone Chuẩn:</b> Server sẽ convert về H.264. Xem được ngay trong Photos nhưng chờ lâu.<br>
-            • Server: Armbian | Engine: yt-dlp + ffmpeg
-        </p>
+        <p class="note">Server: Armbian Home Lab</p>
     </div>
 </body>
 </html>
@@ -64,22 +56,27 @@ def index():
 @app.route('/download', methods=['POST'])
 def download_video():
     url = request.form.get('url')
-    mode = request.form.get('mode') # Lấy chế độ người dùng chọn
+    mode = request.form.get('mode')
     
-    # Cấu hình chung cơ bản
+    # 1. Dọn dẹp sạch sẽ thư mục tmp TRƯỚC khi tải
+    # (Để đảm bảo file tìm thấy sau này chính là file vừa tải)
+    old_files = glob.glob('/tmp/*')
+    for f in old_files:
+        try: os.remove(f)
+        except: pass
+
+    # Cấu hình cơ bản
     ydl_opts = {
-        'outtmpl': '/tmp/%(title)s.%(ext)s',
+        # Đặt tên file đơn giản để tránh lỗi ký tự đặc biệt
+        'outtmpl': '/tmp/video_download.%(ext)s', 
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
-        'ffmpeg_location': '/usr/bin/ffmpeg', # Đường dẫn FFmpeg chuẩn trên Docker
+        'ffmpeg_location': '/usr/bin/ffmpeg',
         'cachedir': False,
-        'quiet': False,
-        
-        # Giả lập Client để tránh lỗi 403
+        'quiet': False, # Bật log để debug
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'web'],
-                'player_skip': ['webpage', 'configs', 'js'],
+                'player_client': ['android', 'web'], # Quay về android thường cho ổn định
             }
         },
         'http_headers': {
@@ -87,12 +84,12 @@ def download_video():
         }
     }
 
-    # --- XỬ LÝ LOGIC THEO LỰA CHỌN ---
+    # --- XỬ LÝ LOGIC "MỀM MỎNG" HƠN ---
     
     if mode == 'mp4_convert':
-        # Chế độ tương thích iPhone (Tốn CPU)
         ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',
+            # Dùng bv* thay vì bestvideo để không bắt buộc phải có video rời
+            'format': 'bv*+ba/b[ext=mp4]/b', 
             'merge_output_format': 'mp4',
             'postprocessors': [{
                 'key': 'FFmpegVideoConvertor',
@@ -101,7 +98,6 @@ def download_video():
         })
         
     elif mode == 'audio_only':
-        # Chế độ tách nhạc MP3
         ydl_opts.update({
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -111,46 +107,56 @@ def download_video():
             }],
         })
         
-    else: # mode == 'original' (Mặc định)
-        # Chế độ tải file gốc (Nhanh nhất, giữ 4K)
-        # Chỉ merge video + audio vào container MKV/WebM chứ KHÔNG convert lại codec
+    else: # mode == 'original' (An toàn nhất)
         ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',
-            'merge_output_format': 'mkv', # MKV là container an toàn nhất cho mọi codec
+            # CÔNG THỨC THẦN THÁNH FIX LỖI:
+            # bv*+ba: Lấy video rời + audio rời (nếu có)
+            # /b: Nếu không có, lấy file gộp tốt nhất (best)
+            # Không ép merge_output_format để tránh lỗi format not available
+            'format': 'bv*+ba/b', 
         })
 
     try:
-        # Dọn dẹp file cũ
-        files = glob.glob('/tmp/*')
-        for f in files:
-            try: os.remove(f)
-            except: pass
-
-        # Thực thi
+        # Thực thi tải
         with YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info_dict)
+            ydl.extract_info(url, download=True)
             
-            # Xử lý phần mở rộng file sau khi convert (đặc biệt cho MP3)
-            if mode == 'audio_only':
-                base, _ = os.path.splitext(filename)
-                filename = base + ".mp3"
-            elif mode == 'mp4_convert':
-                base, _ = os.path.splitext(filename)
-                filename = base + ".mp4"
-            elif mode == 'original':
-                # Đôi khi merge xong nó ra .mkv
-                base, _ = os.path.splitext(filename)
-                filename = base + ".mkv"
+        # --- LOGIC TÌM FILE THÔNG MINH ---
+        # Thay vì đoán tên, ta quét xem file nào vừa xuất hiện trong /tmp
+        # Loại trừ cookies.txt nếu lỡ copy vào đó
+        list_of_files = glob.glob('/tmp/*')
+        if not list_of_files:
+            return "❌ Lỗi: Không tìm thấy file tải về (Có thể bị Youtube chặn hoặc lỗi mạng)", 500
+            
+        # Tìm file mới nhất (vừa tải xong)
+        latest_file = max(list_of_files, key=os.path.getctime)
+        
+        # Nếu lỡ bắt nhầm file cookies hoặc file rác hệ thống
+        if "cookies.txt" in latest_file:
+             # Tìm file lớn thứ nhì hoặc lọc theo đuôi
+             files_video = [f for f in list_of_files if not f.endswith('.txt')]
+             if files_video:
+                 latest_file = max(files_video, key=os.path.getctime)
+             else:
+                 return "❌ Lỗi: Chỉ thấy file cookies, không thấy video.", 500
 
-        return send_file(filename, as_attachment=True)
+        # Đổi tên file tải về cho đẹp (Option)
+        # return send_file(latest_file, as_attachment=True, download_name="video_downloadED" + os.path.splitext(latest_file)[1])
+        return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
         return f"""
-        <h3>❌ Có lỗi xảy ra:</h3>
-        <p>{str(e)}</p>
-        <p>Thử đổi chế độ tải hoặc kiểm tra lại Link/Cookies.</p>
-        <button onclick="window.history.back()">Quay lại</button>
+        <div style="font-family: sans-serif; padding: 20px;">
+            <h3>❌ Có lỗi xảy ra:</h3>
+            <pre style="background: #eee; padding: 10px; border-radius: 5px;">{str(e)}</pre>
+            <p><b>Cách khắc phục:</b></p>
+            <ul>
+                <li>Thử chọn chế độ "Gốc (Auto Best)"</li>
+                <li>Link video có thể là Livestream hoặc Private</li>
+                <li>Cookies có thể đã hết hạn -> Cần update cookies.txt mới</li>
+            </ul>
+            <button onclick="window.history.back()" style="padding: 10px 20px; cursor: pointer;">Quay lại</button>
+        </div>
         """, 500
 
 if __name__ == '__main__':
