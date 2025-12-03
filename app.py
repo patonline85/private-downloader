@@ -1,150 +1,50 @@
 import os
 import glob
-import json
-import time
-import subprocess
-import shutil
-from flask import Flask, render_template_string, request, send_file, Response, stream_with_context
+from flask import Flask, render_template_string, request, send_file
 from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# --- FIX MÔI TRƯỜNG & DỌN DẸP ---
-# 1. Ép path thủ công lần nữa cho chắc
-if '/usr/bin' not in os.environ['PATH']:
-    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
-
-# 2. Xóa cache cũ để yt-dlp nhận diện lại Node
-try:
-    shutil.rmtree('/root/.cache/yt-dlp', ignore_errors=True)
-except: pass
-
-# --- GIAO DIỆN CÓ THANH TIẾN TRÌNH ---
+# Giao diện HTML (Giữ nguyên, chỉ chỉnh lại script tải cho mượt)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pro Downloader</title>
+    <title>Pro Downloader @Armbian</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #1c1c1e; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: #2c2c2e; padding: 30px; border-radius: 16px; width: 90%; max-width: 450px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h2 { text-align: center; margin-bottom: 20px; color: #fff; }
-        
-        input { width: 100%; padding: 15px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #3a3a3c; background: #1c1c1e; color: white; box-sizing: border-box; font-size: 16px; }
-        
-        button { width: 100%; padding: 15px; background: #0a84ff; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; }
-        button:hover { background: #0077e6; }
-        button:disabled { background: #48484a; cursor: not-allowed; }
-
-        /* THANH TIẾN TRÌNH */
-        .progress-container { margin-top: 25px; display: none; }
-        .progress-bg { width: 100%; background-color: #3a3a3c; border-radius: 10px; height: 16px; overflow: hidden; }
-        .progress-bar { height: 100%; width: 0%; background-color: #30d158; transition: width 0.3s ease; }
-        .status-text { text-align: center; margin-top: 10px; font-size: 0.9em; color: #aeaeb2; font-family: monospace; }
-        
-        /* LINK TẢI VỀ */
-        #downloadArea { display: none; margin-top: 20px; text-align: center; }
-        .save-btn { display: inline-block; padding: 12px 25px; background: #30d158; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
-        
-        .error-msg { color: #ff453a; text-align: center; margin-top: 15px; display: none; word-break: break-word;}
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 90%; max-width: 450px; }
+        h2 { text-align: center; color: #333; margin-bottom: 20px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #555; font-size: 0.9em; }
+        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; background: white; font-size: 16px; appearance: none; }
+        button { background: #007aff; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: 0.2s; }
+        button:hover { background: #005bb5; }
+        .note { font-size: 12px; color: #888; margin-top: 20px; text-align: center; line-height: 1.5; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>🚀 Video Downloader</h2>
-        <form id="dlForm">
-            <input type="text" id="url" placeholder="Dán link Youtube/Facebook..." required>
-            <button type="submit" id="submitBtn">Tải Video Ngay</button>
-        </form>
-
-        <div class="progress-container" id="progressArea">
-            <div class="progress-bg">
-                <div class="progress-bar" id="progressBar"></div>
+        <h2>🚀 Server Downloader</h2>
+        <form method="POST" action="/download">
+            <div class="input-group">
+                <label>Dán Link Video (Youtube/FB/TikTok):</label>
+                <input type="text" name="url" placeholder="https://..." required>
             </div>
-            <div class="status-text" id="statusText">Đang kết nối...</div>
-        </div>
-
-        <div id="downloadArea">
-            <p>✅ Đã xong!</p>
-            <a href="#" id="finalLink" class="save-btn">Lưu Video Về iPhone</a>
-        </div>
-        
-        <p id="errorText" class="error-msg"></p>
+            <div class="input-group">
+                <label>Chọn Chế Độ Tải:</label>
+                <select name="mode">
+                    <option value="original">⚡ Gốc (Auto Best) - An toàn nhất</option>
+                    <option value="mp4_convert">🍎 iPhone Chuẩn (MP4) - Ép Convert</option>
+                    <option value="audio_only">🎵 Chỉ lấy Audio (MP3)</option>
+                </select>
+            </div>
+            <button type="submit" onclick="this.innerText='⏳ Đang xử lý... (Đừng tắt)'">Tải Về Ngay</button>
+        </form>
+        <p class="note">Server: Armbian Home Lab</p>
     </div>
-
-    <script>
-        document.getElementById('dlForm').onsubmit = async function(e) {
-            e.preventDefault();
-            const btn = document.getElementById('submitBtn');
-            const progressArea = document.getElementById('progressArea');
-            const progressBar = document.getElementById('progressBar');
-            const statusText = document.getElementById('statusText');
-            const downloadArea = document.getElementById('downloadArea');
-            const errorText = document.getElementById('errorText');
-            
-            // Reset UI
-            btn.disabled = true;
-            downloadArea.style.display = 'none';
-            errorText.style.display = 'none';
-            progressArea.style.display = 'block';
-            progressBar.style.width = '0%';
-            statusText.innerText = 'Đang khởi động yt-dlp...';
-            
-            const formData = new FormData();
-            formData.append('url', document.getElementById('url').value);
-
-            try {
-                const response = await fetch('/stream_download', { method: 'POST', body: formData });
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\\n');
-                    
-                    for (const line of lines) {
-                        if (!line.trim()) continue;
-                        try {
-                            const data = JSON.parse(line);
-                            
-                            if (data.status === 'downloading') {
-                                progressBar.style.width = data.percent + '%';
-                                statusText.innerText = `Đang tải: ${data.percent}% | ${data.speed}`;
-                            } else if (data.status === 'merging') {
-                                progressBar.style.width = '98%';
-                                progressBar.style.backgroundColor = '#ffcc00'; 
-                                statusText.innerText = 'Đang xử lý file (Merge)...';
-                            } else if (data.status === 'finished') {
-                                progressBar.style.width = '100%';
-                                progressBar.style.backgroundColor = '#30d158';
-                                statusText.innerText = 'Hoàn tất!';
-                                document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename);
-                                downloadArea.style.display = 'block';
-                                btn.disabled = false;
-                            } else if (data.status === 'error') {
-                                throw new Error(data.message);
-                            }
-                        } catch (err) {
-                            if (err.message && !err.message.includes("JSON")) {
-                                errorText.innerText = "Lỗi: " + err.message;
-                                errorText.style.display = 'block';
-                                progressArea.style.display = 'none';
-                                btn.disabled = false;
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                errorText.innerText = "Lỗi kết nối: " + error;
-                errorText.style.display = 'block';
-                btn.disabled = false;
-            }
-        };
-    </script>
 </body>
 </html>
 """
@@ -153,67 +53,111 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/stream_download', methods=['POST'])
-def stream_download():
+@app.route('/download', methods=['POST'])
+def download_video():
     url = request.form.get('url')
+    mode = request.form.get('mode')
+    
+    # 1. Dọn dẹp sạch sẽ thư mục tmp TRƯỚC khi tải
+    # (Để đảm bảo file tìm thấy sau này chính là file vừa tải)
+    old_files = glob.glob('/tmp/*')
+    for f in old_files:
+        try: os.remove(f)
+        except: pass
 
-    def generate():
-        # Dọn dẹp file cũ
-        for f in glob.glob('/tmp/*'):
-            try: os.remove(f)
-            except: pass
-
-        # Hàm bắt tiến độ tải
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                p = d.get('_percent_str', '0%').replace('%','').strip()
-                s = d.get('_speed_str', 'N/A')
-                # Gửi dữ liệu về cho JavaScript vẽ thanh loading
-                yield json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
-            elif d['status'] == 'finished':
-                yield json.dumps({'status': 'merging'}) + "\n"
-
-        ydl_opts = {
-            'outtmpl': '/tmp/%(title)s.%(ext)s',
-            'restrictfilenames': True,
-            'cookiefile': 'cookies.txt',
-            'ffmpeg_location': '/usr/bin/ffmpeg',
-            'quiet': True,
-            'progress_hooks': [progress_hook],
-            
-            # --- CẤU HÌNH QUAN TRỌNG ---
-            'extractor_args': {'youtube': {'player_client': ['web']}},
-            # Tự động chọn file tốt nhất (MP4)
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-            'merge_output_format': 'mp4',
-            
-            # Tắt cache để tránh lỗi Node
-            'cachedir': False, 
+    # Cấu hình cơ bản
+    ydl_opts = {
+        # Đặt tên file đơn giản để tránh lỗi ký tự đặc biệt
+        'outtmpl': '/tmp/video_download.%(ext)s', 
+        'noplaylist': True,
+        'cookiefile': 'cookies.txt',
+        'ffmpeg_location': '/usr/bin/ffmpeg',
+        'cachedir': False,
+        'quiet': False, # Bật log để debug
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'], # Quay về android thường cho ổn định
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         }
+    }
 
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.extract_info(url, download=True)
+    # --- XỬ LÝ LOGIC "MỀM MỎNG" HƠN ---
+    
+    if mode == 'mp4_convert':
+        ydl_opts.update({
+            # Dùng bv* thay vì bestvideo để không bắt buộc phải có video rời
+            'format': 'bv*+ba/b[ext=mp4]/b', 
+            'merge_output_format': 'mp4',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+        })
+        
+    elif mode == 'audio_only':
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
+        
+    else: # mode == 'original' (An toàn nhất)
+        ydl_opts.update({
+            # CÔNG THỨC THẦN THÁNH FIX LỖI:
+            # bv*+ba: Lấy video rời + audio rời (nếu có)
+            # /b: Nếu không có, lấy file gộp tốt nhất (best)
+            # Không ép merge_output_format để tránh lỗi format not available
+            'format': 'bv*+ba/b', 
+        })
+
+    try:
+        # Thực thi tải
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(url, download=True)
             
-            # Tìm file kết quả
-            files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part')]
-            if files:
-                final_file = max(files, key=os.path.getctime)
-                yield json.dumps({'status': 'finished', 'filename': os.path.basename(final_file)}) + "\n"
-            else:
-                yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file sau khi tải'}) + "\n"
+        # --- LOGIC TÌM FILE THÔNG MINH ---
+        # Thay vì đoán tên, ta quét xem file nào vừa xuất hiện trong /tmp
+        # Loại trừ cookies.txt nếu lỡ copy vào đó
+        list_of_files = glob.glob('/tmp/*')
+        if not list_of_files:
+            return "❌ Lỗi: Không tìm thấy file tải về (Có thể bị Youtube chặn hoặc lỗi mạng)", 500
+            
+        # Tìm file mới nhất (vừa tải xong)
+        latest_file = max(list_of_files, key=os.path.getctime)
+        
+        # Nếu lỡ bắt nhầm file cookies hoặc file rác hệ thống
+        if "cookies.txt" in latest_file:
+             # Tìm file lớn thứ nhì hoặc lọc theo đuôi
+             files_video = [f for f in list_of_files if not f.endswith('.txt')]
+             if files_video:
+                 latest_file = max(files_video, key=os.path.getctime)
+             else:
+                 return "❌ Lỗi: Chỉ thấy file cookies, không thấy video.", 500
 
-        except Exception as e:
-            yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
+        # Đổi tên file tải về cho đẹp (Option)
+        # return send_file(latest_file, as_attachment=True, download_name="video_downloadED" + os.path.splitext(latest_file)[1])
+        return send_file(latest_file, as_attachment=True)
 
-    return Response(stream_with_context(generate()), mimetype='text/plain')
-
-@app.route('/get_file/<filename>')
-def get_file(filename):
-    safe_path = os.path.join('/tmp', filename)
-    if os.path.exists(safe_path):
-        return send_file(safe_path, as_attachment=True)
-    return "Not Found", 404
+    except Exception as e:
+        return f"""
+        <div style="font-family: sans-serif; padding: 20px;">
+            <h3>❌ Có lỗi xảy ra:</h3>
+            <pre style="background: #eee; padding: 10px; border-radius: 5px;">{str(e)}</pre>
+            <p><b>Cách khắc phục:</b></p>
+            <ul>
+                <li>Thử chọn chế độ "Gốc (Auto Best)"</li>
+                <li>Link video có thể là Livestream hoặc Private</li>
+                <li>Cookies có thể đã hết hạn -> Cần update cookies.txt mới</li>
+            </ul>
+            <button onclick="window.history.back()" style="padding: 10px 20px; cursor: pointer;">Quay lại</button>
+        </div>
+        """, 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
