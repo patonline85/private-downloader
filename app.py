@@ -9,32 +9,26 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# --- HÀM CẤU HÌNH MÔI TRƯỜNG (CHẠY KHI KHỞI ĐỘNG) ---
-def configure_environment():
-    print("--- SYSTEM CHECK START ---")
+# --- CẤU HÌNH MÔI TRƯỜNG (FIX LỖI PATH) ---
+def setup_environment():
+    # 1. Ép cứng các đường dẫn chuẩn Linux vào PATH của Python
+    # Đây là chìa khóa để Gunicorn nhìn thấy Node
+    extra_paths = ['/usr/bin', '/usr/local/bin', '/bin']
+    current_path = os.environ.get('PATH', '')
     
-    # 1. Ép Path /usr/bin (nơi chứa Node) vào đầu tiên
-    if '/usr/bin' not in os.environ['PATH']:
-        os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
+    for p in extra_paths:
+        if p not in current_path:
+            current_path = p + ':' + current_path
+    
+    os.environ['PATH'] = current_path
 
-    # 2. Xóa cache
+    # 2. Xóa cache cũ của yt-dlp (để nó nhận diện lại môi trường)
     try:
         shutil.rmtree('/root/.cache/yt-dlp', ignore_errors=True)
-        shutil.rmtree('/var/tmp/yt-dlp_cache', ignore_errors=True)
-    except Exception:
-        pass
+    except: pass
 
-    # 3. Kiểm tra Node
-    try:
-        node_v = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
-        print(f"✅ NODEJS READY: {node_v}")
-    except Exception as e:
-        print(f"❌ NODEJS ERROR: {e}")
-    
-    print("--- SYSTEM CHECK END ---")
-
-# Gọi hàm cấu hình ngay lập tức
-configure_environment()
+# Chạy setup ngay khi file được load
+setup_environment()
 
 # --- GIAO DIỆN HTML ---
 HTML_TEMPLATE = """
@@ -69,6 +63,8 @@ HTML_TEMPLATE = """
         .status-text { text-align: center; font-size: 0.9em; margin-top: 5px; color: #aaa; }
         #finalLinkArea { display: none; text-align: center; margin-top: 20px; }
         .save-btn { background: #ff9f0a; color: black; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: bold; display: inline-block; }
+        .debug-link { text-align: center; margin-top: 30px; font-size: 0.8em; }
+        .debug-link a { color: #555; text-decoration: none; }
     </style>
 </head>
 <body>
@@ -96,6 +92,8 @@ HTML_TEMPLATE = """
     <div id="finalLinkArea">
         <a href="#" id="finalLink" class="save-btn">💾 Lưu Video Về Máy</a>
     </div>
+
+    <div class="debug-link"><a href="/debug" target="_blank">[Kiểm tra môi trường Server]</a></div>
 </div>
 
 <script>
@@ -209,10 +207,28 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+# --- TRANG DEBUG ĐỂ KIỂM TRA MÔI TRƯỜNG ---
+@app.route('/debug')
+def debug_page():
+    info = []
+    info.append(f"<b>PATH:</b> {os.environ.get('PATH')}")
+    
+    try:
+        node_path = shutil.which("node")
+        info.append(f"<b>Which Node:</b> {node_path}")
+    except: info.append("<b>Which Node:</b> Not found via shutil")
+
+    try:
+        node_v = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
+        info.append(f"<b>Node Version (Exec):</b> {node_v}")
+    except Exception as e:
+        info.append(f"<b>Node Version (Exec):</b> ERROR: {str(e)}")
+
+    return "<br>".join(info)
+
 @app.route('/analyze', methods=['POST'])
 def analyze():
     url = request.form.get('url')
-    # Cấu hình phân tích
     ydl_opts = {
         'cookiefile': 'cookies.txt',
         'quiet': True,
@@ -224,7 +240,7 @@ def analyze():
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            ydl.cache.remove() # Xóa cache thủ công
+            ydl.cache.remove()
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
 
@@ -252,7 +268,6 @@ def analyze():
                     'filesize': f"{round(filesize / 1024 / 1024, 1)} MB" if filesize else "N/A"
                 })
         
-        # Sắp xếp danh sách
         video_opts.reverse()
         audio_opts.reverse()
         
@@ -267,7 +282,6 @@ def download_custom():
     aud_id = request.form.get('audio_id')
 
     def generate():
-        # Dọn dẹp thư mục tmp
         for f in glob.glob('/tmp/*'):
             try: os.remove(f)
             except: pass
@@ -285,13 +299,9 @@ def download_custom():
         }
 
         try:
-            # Gửi tín hiệu đang tải
             yield json.dumps({'status': 'downloading'}) + "\n"
-            
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.extract_info(url, download=True)
-            
-            # Gửi tín hiệu ghép file (thực tế yt-dlp ghép tự động sau khi tải)
             yield json.dumps({'status': 'merging'}) + "\n"
 
             files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part')]
