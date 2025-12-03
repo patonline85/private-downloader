@@ -136,7 +136,19 @@ def download_video():
              else:
                  return "❌ Lỗi: Chỉ thấy file cookies, không thấy video.", 500
 
-        # Gửi file về (Flask sẽ tự lấy tên file từ biến latest_file)
+        # Định nghĩa hành động dọn dẹp SAU KHI gửi xong
+        @after_this_request
+        def remove_file(response):
+            try:
+                os.remove(latest_file) # Xóa file video
+                # Xóa luôn file cookies tạm nếu có
+                if os.path.exists('cookies.txt'): 
+                    pass # (Thường không nên xóa cookies gốc, chỉ xóa video thôi)
+            except Exception as error:
+                app.logger.error("Error removing or closing downloaded file handle", error)
+            return response
+
+        # Gửi file về
         return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
@@ -150,3 +162,4 @@ def download_video():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
