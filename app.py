@@ -240,36 +240,39 @@ def stream_download():
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
 
-        # Cấu hình yt-dlp (Giữ nguyên logic ổn định cũ)
+        # Cấu hình yt-dlp tối ưu cho Armbian
         ydl_opts = {
-            'outtmpl': '/tmp/%(title)s.%(ext)s', # Lấy tên gốc
+            'outtmpl': '/tmp/%(title)s.%(ext)s',
             'trim_file_name': 200,
-            'restrictfilenames': False,          # Cho phép tiếng Việt
+            'restrictfilenames': False,
             'noplaylist': True,
             'cookiefile': 'cookies.txt',
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'cachedir': False,
             'quiet': True,
-            'progress_hooks': [progress_hook],   # Gắn hook vào đây
+            'progress_hooks': [progress_hook],
             'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
             'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         }
 
-        # Logic chọn định dạng
+        # --- LOGIC CHỌN ĐỊNH DẠNG ĐÃ TỐI ƯU ---
         if mode == 'mp4_convert':
+            # Thay vì convert cưỡng bức (rất nặng cho ARM), ta ưu tiên tìm nguồn Video là codec h264 (mp4) ngay từ đầu
+            # Nếu Youtube không có 4K mp4 (thường chỉ có WebM), nó sẽ tự lấy WebM chất lượng cao nhất và đóng gói vào MP4 container (nhẹ hơn convert)
             ydl_opts.update({
-                'format': 'bv*+ba/b[ext=mp4]/b',
-                'merge_output_format': 'mp4',
-                'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
+                'format': 'bv*[vcodec^=avc]+ba[ext=m4a]/b[ext=mp4]/b', 
+                'merge_output_format': 'mp4' 
             })
         elif mode == 'audio_only':
             ydl_opts.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
             })
-        else: # original
+        else: # original (Chế độ tốt nhất cho 4K)
+            # Dùng MKV để chứa được mọi loại codec (VP9/AV1) mà không cần convert
             ydl_opts.update({
-                'format': 'bv*+ba/b',
+                'format': 'bestvideo+bestaudio/best',
+                'merge_output_format': 'mkv' 
             })
 
         try:
@@ -305,3 +308,4 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
