@@ -1,22 +1,21 @@
+# Dùng Python 3.11 bản đầy đủ
 FROM python:3.11-bookworm
 
-# 1. Cài đặt dependency
+# 1. Cài đặt các công cụ hệ thống & FFmpeg
 RUN apt-get update && \
     apt-get install -y curl gnupg git ffmpeg && \
     apt-get clean
 
-# 2. Cài đặt NodeJS v20 từ nguồn chính thức (NodeSource)
-# Nó sẽ tự động đặt file chạy vào /usr/bin/node
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && \
+# 2. Cài đặt NodeJS v20 (Cách chính thống dùng setup script)
+# Lệnh này tự động cấu hình mọi thứ, không cần ln -s thủ công
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
-# 3. Setup App
+# 3. Cài đặt App
 WORKDIR /app
+# Cài các thư viện Python
 RUN pip install --no-cache-dir Flask gunicorn
-# Cài bản Master của yt-dlp
+# Cài yt-dlp bản mới nhất từ Master (quan trọng)
 RUN pip install --no-cache-dir --force-reinstall git+https://github.com/yt-dlp/yt-dlp.git@master
 
 COPY . .
@@ -24,4 +23,6 @@ COPY . .
 # Chạy quyền Root
 USER root
 EXPOSE 5000
+
+# Timeout 10 phút, worker chạy 4 luồng
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "600", "app:app"]
