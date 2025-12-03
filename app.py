@@ -45,9 +45,26 @@ def download_video():
     # Lưu ý: Render dùng hệ file tạm, ta lưu vào /tmp
     ydl_opts = {
         'outtmpl': '/tmp/%(title)s.%(ext)s',
-        'format': 'best', # Tải chất lượng tốt nhất (đã merge video+audio nếu có ffmpeg)
+        
+        # SỬA LẠI PHẦN FORMAT
+        # Tải video tốt nhất + audio tốt nhất, sau đó merge thành mp4
+        'format': 'bestvideo+bestaudio/best', 
+        'merge_output_format': 'mp4',
+        
+        # FIX LỖI TIKTOK/IOS:
+        # Nếu video là mkv/webm, postprocessor sẽ convert sang mp4 chuẩn
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4',
+        }],
+        
         'noplaylist': True,
-        'cookiefile': 'cookies.txt'
+        'cookiefile': 'cookies.txt',
+        
+        # Bổ sung User-Agent giả lập trình duyệt để tránh bị TikTok chặn (trả về file rỗng)
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        }
     }
 
     try:
@@ -72,3 +89,4 @@ def download_video():
 if __name__ == '__main__':
 
     app.run(host='0.0.0.0', port=5000)
+
