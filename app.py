@@ -7,6 +7,7 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
+# --- GIAO DIỆN HTML (Giữ nguyên) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -151,15 +152,16 @@ def stream_download():
             'quiet': True,
             'progress_hooks': [progress_hook],
             
-            # --- CHIẾN THUẬT CLIENT MỚI: ANDROID CREATOR ---
-            # Đây là client dành cho Youtube Studio, thường bypass tốt hơn
-            # Và fallback về 'web' nếu cần (lúc này đã có NodeJS nên web sẽ chạy ngon)
+            # --- CẤU HÌNH FIX LỖI 403 & N CHALLENGE ---
+            # 1. Quay về 'web' client vì nó hỗ trợ Cookies tốt nhất
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android_creator', 'web'], 
-                    'player_skip': ['webpage', 'configs', 'js'], 
+                    'player_client': ['web'],
+                    'player_skip': ['webpage', 'configs'], # Bỏ qua config rác
                 }
             },
+            # 2. Fake User-Agent thành Windows PC để Youtube không chặn Server
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
 
         if mode == '4k_mkv':
