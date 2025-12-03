@@ -1,37 +1,138 @@
 import os
 import glob
-from flask import Flask, render_template_string, request, send_file
+import json
+import time
+import re
+from flask import Flask, render_template_string, request, send_file, Response, stream_with_context
 from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
+# --- GIAO DIỆN HTML + JAVASCRIPT (Đã tích hợp xử lý Stream) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Armbian 4K Downloader</title>
+    <title>Server 4K Downloader</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: #2d2d2d; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        input, select { width: 100%; padding: 15px; margin-bottom: 15px; background: #444; border: 1px solid #555; color: white; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 15px; background: #e50914; color: white; border: none; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 1.1em; }
-        button:hover { background: #b2070f; }
+        body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #1e1e1e; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h2 { text-align: center; color: #fff; margin-bottom: 25px; }
+        input, select { width: 100%; padding: 14px; margin-bottom: 15px; background: #2c2c2c; border: 1px solid #333; color: white; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 15px; background: #007aff; color: white; border: none; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px; transition: 0.2s; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        
+        /* CSS cho thanh tiến trình */
+        .progress-container { margin-top: 20px; display: none; }
+        .progress-bar-bg { width: 100%; background-color: #333; border-radius: 10px; overflow: hidden; height: 20px; }
+        .progress-bar-fill { height: 100%; width: 0%; background-color: #28a745; transition: width 0.3s ease; }
+        .status-text { text-align: center; margin-top: 10px; font-size: 0.9em; color: #aaa; font-family: monospace; }
+        .download-link { display: none; margin-top: 15px; text-align: center; }
+        .download-btn { background: #28a745; text-decoration: none; padding: 10px 20px; border-radius: 5px; color: white; font-weight: bold; display: inline-block; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 style="text-align:center">SERVER DOWNLOADER</h2>
-        <form method="POST" action="/download">
-            <input type="text" name="url" placeholder="Dán link vào đây..." required>
-            <select name="mode">
-                <option value="4k_mkv">🌟 4K GỐC (MKV) - Giữ tên gốc & Chất lượng</option>
-                <option value="iphone">📱 iPhone (MP4 1080p) - Convert (Lâu)</option>
-                <option value="mp3">🎵 MP3 (Audio) - Tách nhạc</option>
+        <h2>🚀 High-Res Downloader</h2>
+        <form id="dlForm">
+            <input type="text" id="url" name="url" placeholder="Dán link Youtube/Facebook..." required>
+            
+            <label style="display:block; margin-bottom:5px; font-size:0.9em">Chọn định dạng:</label>
+            <select id="mode" name="mode">
+                <option value="4k_mkv">🌟 4K/2K GỐC (MKV) - Nét nhất</option>
+                <option value="safe_mp4">📱 iPhone (MP4 1080p) - Convert</option>
+                <option value="mp3">🎵 MP3 (Audio Only)</option>
             </select>
-            <button type="submit" onclick="this.innerText='⏳ Đang xử lý... (Đừng tắt)'">TẢI VỀ</button>
+
+            <button type="submit" id="submitBtn">Bắt đầu Tải</button>
         </form>
+
+        <div class="progress-container" id="progressArea">
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="status-text" id="statusText">Đang kết nối Server...</div>
+        </div>
+
+        <div class="download-link" id="downloadArea">
+            <p>✅ Đã xử lý xong!</p>
+            <a href="#" id="finalLink" class="download-btn">Lưu File Về Máy</a>
+        </div>
     </div>
+
+    <script>
+        document.getElementById('dlForm').onsubmit = async function(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submitBtn');
+            const progressArea = document.getElementById('progressArea');
+            const progressBar = document.getElementById('progressBar');
+            const statusText = document.getElementById('statusText');
+            const downloadArea = document.getElementById('downloadArea');
+            
+            // Reset UI
+            btn.disabled = true;
+            downloadArea.style.display = 'none';
+            progressArea.style.display = 'block';
+            progressBar.style.width = '0%';
+            statusText.innerText = 'Đang khởi động yt-dlp...';
+            
+            const formData = new FormData();
+            formData.append('url', document.getElementById('url').value);
+            formData.append('mode', document.getElementById('mode').value);
+
+            try {
+                // Gửi request STREAM
+                const response = await fetch('/stream_download', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\\n');
+                    
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const data = JSON.parse(line);
+                            
+                            if (data.status === 'downloading') {
+                                progressBar.style.width = data.percent + '%';
+                                statusText.innerText = `Đang tải: ${data.percent}% | Tốc độ: ${data.speed || '...'}`;
+                            } else if (data.status === 'merging') {
+                                progressBar.style.width = '99%';
+                                progressBar.style.backgroundColor = '#ffc107'; // Màu vàng
+                                statusText.innerText = 'Đang ghép file (Merge)... Vui lòng đợi!';
+                            } else if (data.status === 'finished') {
+                                progressBar.style.width = '100%';
+                                statusText.innerText = 'Hoàn tất!';
+                                // Hiện nút tải về
+                                document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename);
+                                downloadArea.style.display = 'block';
+                                btn.disabled = false;
+                            } else if (data.status === 'error') {
+                                statusText.innerText = 'Lỗi: ' + data.message;
+                                statusText.style.color = 'red';
+                                btn.disabled = false;
+                            }
+                        } catch (err) { console.log('Parse error', err); }
+                    }
+                }
+            } catch (error) {
+                statusText.innerText = 'Lỗi kết nối Server!';
+                btn.disabled = false;
+            }
+        };
+    </script>
 </body>
 </html>
 """
@@ -40,73 +141,76 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/download', methods=['POST'])
-def download_video():
+# --- XỬ LÝ LOGIC TẢI VÀ STREAM TIẾN TRÌNH ---
+@app.route('/stream_download', methods=['POST'])
+def stream_download():
     url = request.form.get('url')
     mode = request.form.get('mode')
-    
-    # 1. Dọn dẹp file cũ trong /tmp
-    # Rất quan trọng để tìm đúng file vừa tải
-    for f in glob.glob('/tmp/*'):
-        try: os.remove(f)
-        except: pass
 
-    # Cấu hình chung
-    ydl_opts = {
-        # Sửa lại: Dùng tên gốc của video (Title)
-        'outtmpl': '/tmp/%(title)s.%(ext)s',
-        'noplaylist': True,
-        'cookiefile': 'cookies.txt',
-        'ffmpeg_location': '/usr/bin/ffmpeg',
-        'quiet': False,
-        # Tăng kích thước buffer để tải 4K ổn định hơn
-        'buffersize': 1024 * 1024, 
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
-    }
+    def generate():
+        # Dọn dẹp file cũ
+        for f in glob.glob('/tmp/*'):
+            try: os.remove(f)
+            except: pass
 
-    if mode == '4k_mkv':
-        ydl_opts.update({
-            # QUAN TRỌNG: Xóa bỏ "/best" để không bao giờ fallback về MP4 chất lượng thấp
-            # Bắt buộc phải tìm được Video riêng và Audio riêng để ghép
-            'format': 'bestvideo+bestaudio', 
-            'merge_output_format': 'mkv' 
-        })
-    elif mode == 'iphone':
-        ydl_opts.update({
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'merge_output_format': 'mp4'
-        })
-    elif mode == 'mp3':
-        ydl_opts.update({
-            'format': 'bestaudio/best',
-            'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]
-        })
+        # Hook để bắt tiến trình của yt-dlp
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                # Tính phần trăm
+                p = d.get('_percent_str', '0%').replace('%','')
+                s = d.get('_speed_str', 'N/A')
+                # Gửi data JSON về client
+                yield json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
+            elif d['status'] == 'finished':
+                yield json.dumps({'status': 'merging'}) + "\n"
 
-    try:
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.extract_info(url, download=True)
+        ydl_opts = {
+            'outtmpl': '/tmp/%(title)s.%(ext)s',
+            'restrictfilenames': True,
+            'noplaylist': True,
+            'cookiefile': 'cookies.txt',
+            'ffmpeg_location': '/usr/bin/ffmpeg',
+            'quiet': True, # Tắt log rác
+            'progress_hooks': [progress_hook], # Gắn hook vào đây
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        }
+
+        if mode == '4k_mkv':
+            ydl_opts.update({'format': 'bestvideo+bestaudio', 'merge_output_format': 'mkv'})
+        elif mode == 'safe_mp4':
+            ydl_opts.update({'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 'merge_output_format': 'mp4'})
+        elif mode == 'mp3':
+            ydl_opts.update({'format': 'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]})
+
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.extract_info(url, download=True)
             
-        # Tìm file vừa tải xong
-        # Logic: Lấy tất cả file trong /tmp trừ cookies.txt
-        files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt')]
-        
-        if not files:
-            return "<h3>Lỗi: Không tìm thấy file tải về. Có thể Video này không có 4K hoặc bị Youtube chặn.</h3>", 500
-        
-        # Lấy file mới nhất (vừa được tạo ra)
-        # Cách này đảm bảo lấy đúng file dù tên nó là gì
-        latest_file = max(files, key=os.path.getctime)
-        
-        # Gửi file về với tên gốc
-        return send_file(latest_file, as_attachment=True)
+            # Tìm tên file kết quả
+            files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part')]
+            if files:
+                final_file = max(files, key=os.path.getctime)
+                filename_only = os.path.basename(final_file)
+                # Báo cho client biết đã xong và tên file là gì
+                yield json.dumps({'status': 'finished', 'filename': filename_only}) + "\n"
+            else:
+                yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file sau khi tải'}) + "\n"
 
-    except Exception as e:
-        return f"""
-        <h3>❌ Lỗi tải về:</h3>
-        <p>{str(e)}</p>
-        <p><i>Gợi ý: Nếu lỗi "Requested format is not available", nghĩa là video này không có định dạng 4K tách rời. Hãy thử chọn chế độ iPhone.</i></p>
-        <button onclick="history.back()">Quay lại</button>
-        """, 500
+        except Exception as e:
+            yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
+
+    # Trả về Response dạng Stream
+    return Response(stream_with_context(generate()), mimetype='text/plain')
+
+# --- API ĐỂ TRÌNH DUYỆT TẢI FILE VỀ ---
+@app.route('/get_file/<filename>')
+def get_file(filename):
+    # Bảo mật: Chỉ cho phép tải từ /tmp
+    safe_path = os.path.join('/tmp', filename)
+    if os.path.exists(safe_path):
+        return send_file(safe_path, as_attachment=True)
+    else:
+        return "File not found", 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
