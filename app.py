@@ -3,38 +3,27 @@ import glob
 import json
 import time
 import subprocess
-import shutil
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
-# --- KHU VỰC DEBUG & FIX MÔI TRƯỜNG (SYSTEM DIAGNOSTICS) ---
-print("--- BẮT ĐẦU KIỂM TRA MÔI TRƯỜNG ---")
+# --- KHU VỰC CẤU HÌNH MÔI TRƯỜNG (CRITICAL FIX) ---
+# Vì lệnh 'which node' của bạn trả về: /usr/bin/node
+# Nên thư mục cần thêm vào PATH là: /usr/bin
 
-# 1. Tìm chính xác node đang nằm ở đâu bằng lệnh hệ thống
-# Lệnh 'which' sẽ trả về đường dẫn file (VD: /usr/bin/node)
-node_location = shutil.which('node') or '/usr/bin/node' 
+# 1. Ép cứng thư mục /usr/bin vào biến môi trường PATH
+if '/usr/bin' not in os.environ['PATH']:
+    os.environ['PATH'] = '/usr/bin:' + os.environ['PATH']
 
-# 2. Lấy THƯ MỤC cha của file đó (VD: /usr/bin)
-node_dir = os.path.dirname(node_location)
+print(f"✅ PATH FINAL: {os.environ['PATH']}")
 
-# 3. Thêm THƯ MỤC đó vào biến môi trường PATH
-# Nếu ta không thêm thư mục, yt-dlp sẽ không gọi được lệnh 'node'
-current_path = os.environ.get('PATH', '')
-if node_dir not in current_path:
-    os.environ['PATH'] = node_dir + os.pathsep + current_path
-
-print(f"✅ NODE LOCATION: {node_location}")
-print(f"✅ PATH UPDATED: {os.environ['PATH']}")
-
-# 4. Test thử xem Python gọi được Node chưa
+# 2. Test thử xem Python gọi được Node chưa (để in ra log cho yên tâm)
 try:
-    version = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
-    print(f"🎉 SUCCESS: Python đã nhìn thấy NodeJS phiên bản: {version}")
+    # Gọi thẳng lệnh node -v để kiểm tra
+    node_ver = subprocess.check_output(["node", "-v"], stderr=subprocess.STDOUT).decode().strip()
+    print(f"🎉 SUCCESS: Python đã kết nối được NodeJS: {node_ver}")
 except Exception as e:
-    print(f"❌ FATAL ERROR: Python vẫn không gọi được Node. Lỗi: {str(e)}")
-
-print("--- KẾT THÚC KIỂM TRA ---")
-# -----------------------------------------------------------
+    print(f"❌ ERROR: Python vẫn chưa gọi được Node. Lỗi: {str(e)}")
+# --------------------------------------------------
 
 app = Flask(__name__)
 
@@ -208,6 +197,7 @@ def analyze():
         'quiet': True,
         'skip_download': True,
         'ffmpeg_location': '/usr/bin/ffmpeg', 
+        # Sử dụng Web Client (đã có NodeJS để giải mã)
         'extractor_args': {'youtube': {'player_client': ['web']}},
     }
 
