@@ -61,6 +61,14 @@ def download_video():
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
         
+        # --- THÊM ĐOẠN NÀY ĐỂ FIX 403 ---
+        # Ép yt-dlp giả lập là Android App thay vì trình duyệt Web
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios'],
+            }
+        },
+        
         # Bổ sung User-Agent giả lập trình duyệt để tránh bị TikTok chặn (trả về file rỗng)
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -89,4 +97,5 @@ def download_video():
 if __name__ == '__main__':
 
     app.run(host='0.0.0.0', port=5000)
+
 
