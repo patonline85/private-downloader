@@ -47,6 +47,7 @@ def download_video():
         'outtmpl': '/tmp/%(title)s.%(ext)s',
         'format': 'best', # Tải chất lượng tốt nhất (đã merge video+audio nếu có ffmpeg)
         'noplaylist': True,
+        'cookiefile': 'cookies.txt'
     }
 
     try:
@@ -69,4 +70,5 @@ def download_video():
         return f"Lỗi: {str(e)}", 500
 
 if __name__ == '__main__':
+
     app.run(host='0.0.0.0', port=5000)
