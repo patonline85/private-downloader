@@ -50,6 +50,12 @@ def download_video():
         # Tải video tốt nhất + audio tốt nhất, sau đó merge thành mp4
         'format': 'bestvideo+bestaudio/best', 
         'merge_output_format': 'mp4',
+
+        # --- QUAN TRỌNG: CHỈ ĐỊNH ĐƯỜNG DẪN FFMPEG ---
+        'ffmpeg_location': '/usr/bin/ffmpeg', 
+        
+        'noplaylist': True,
+        'cookiefile': 'cookies.txt',
         
         # FIX LỖI TIKTOK/IOS:
         # Nếu video là mkv/webm, postprocessor sẽ convert sang mp4 chuẩn
@@ -97,5 +103,6 @@ def download_video():
 if __name__ == '__main__':
 
     app.run(host='0.0.0.0', port=5000)
+
 
 
