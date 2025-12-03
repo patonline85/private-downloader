@@ -2,8 +2,21 @@ import os
 import glob
 import json
 import time
+import shutil
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
+
+# --- KHU VỰC SỬA LỖI (FIX ENVIRONMENT) ---
+# 1. Tìm xem node đang nằm ở đâu
+node_path = shutil.which('node') or '/usr/bin/node' or '/usr/local/bin/node'
+
+# 2. Ép đường dẫn này vào biến môi trường PATH để yt-dlp nhìn thấy
+if os.path.dirname(node_path) not in os.environ['PATH']:
+    os.environ['PATH'] = os.path.dirname(node_path) + ':' + os.environ['PATH']
+
+print(f"✅ DEBUG: Node found at: {node_path}")
+print(f"✅ DEBUG: Current PATH: {os.environ['PATH']}")
+# -----------------------------------------
 
 app = Flask(__name__)
 
@@ -176,8 +189,10 @@ def analyze():
     ydl_opts = {
         'cookiefile': 'cookies.txt',
         'quiet': True,
-        'skip_download': True, # Chỉ lấy thông tin
-        # Sử dụng Web Client (đã có NodeJS để giải mã)
+        'skip_download': True,
+        'ffmpeg_location': '/usr/bin/ffmpeg', # Chỉ định rõ ffmpeg
+        
+        # --- QUAN TRỌNG: Client Web ---
         'extractor_args': {'youtube': {'player_client': ['web']}},
     }
 
@@ -190,7 +205,6 @@ def analyze():
         audio_opts = []
 
         for f in formats:
-            # Lọc Video
             if f.get('vcodec') != 'none' and f.get('acodec') == 'none':
                 filesize = f.get('filesize') or f.get('filesize_approx') or 0
                 video_opts.append({
@@ -201,7 +215,6 @@ def analyze():
                     'fps': f.get('fps', 30),
                     'filesize': f"{round(filesize / 1024 / 1024, 1)} MB" if filesize else "N/A"
                 })
-            # Lọc Audio
             elif f.get('acodec') != 'none' and f.get('vcodec') == 'none':
                 filesize = f.get('filesize') or f.get('filesize_approx') or 0
                 audio_opts.append({
@@ -214,6 +227,7 @@ def analyze():
         video_opts.reverse(); audio_opts.reverse()
         return jsonify({'videos': video_opts, 'audios': audio_opts})
     except Exception as e:
+        # Trả về lỗi chi tiết để debug
         return jsonify({'error': str(e)})
 
 @app.route('/download_custom', methods=['POST'])
