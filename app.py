@@ -2,13 +2,11 @@ import os
 import glob
 import json
 import time
-import re
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context
 from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# --- GIAO DIỆN HTML (Giữ nguyên thanh tiến trình) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -37,14 +35,11 @@ HTML_TEMPLATE = """
         <h2>🚀 High-Res Downloader</h2>
         <form id="dlForm">
             <input type="text" id="url" name="url" placeholder="Dán link Youtube/Facebook..." required>
-            
-            <label style="display:block; margin-bottom:5px; font-size:0.9em">Chọn định dạng:</label>
             <select id="mode" name="mode">
                 <option value="4k_mkv">🌟 4K/2K GỐC (MKV) - Nét nhất</option>
                 <option value="safe_mp4">📱 iPhone (MP4 1080p) - Convert</option>
                 <option value="mp3">🎵 MP3 (Audio Only)</option>
             </select>
-
             <button type="submit" id="submitBtn">Bắt đầu Tải</button>
         </form>
 
@@ -156,25 +151,22 @@ def stream_download():
             'quiet': True,
             'progress_hooks': [progress_hook],
             
-            # --- KHẮC PHỤC LỖI PO TOKEN TẠI ĐÂY ---
-            # Thay vì dùng 'android'/'ios' (bị lỗi), ta dùng 'web' (Trình duyệt máy tính)
-            # Kết hợp với cookies.txt thì 'web' vẫn tải được 4K bình thường.
+            # --- CHIẾN THUẬT CLIENT MỚI: ANDROID CREATOR ---
+            # Đây là client dành cho Youtube Studio, thường bypass tốt hơn
+            # Và fallback về 'web' nếu cần (lúc này đã có NodeJS nên web sẽ chạy ngon)
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web'], 
+                    'player_client': ['android_creator', 'web'], 
                     'player_skip': ['webpage', 'configs', 'js'], 
                 }
             },
         }
 
         if mode == '4k_mkv':
-            # Chế độ 4K MKV
             ydl_opts.update({'format': 'bestvideo+bestaudio', 'merge_output_format': 'mkv'})
         elif mode == 'safe_mp4':
-            # Chế độ iPhone
             ydl_opts.update({'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 'merge_output_format': 'mp4'})
         elif mode == 'mp3':
-            # Chế độ Nhạc
             ydl_opts.update({'format': 'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]})
 
         try:
@@ -189,7 +181,6 @@ def stream_download():
                 yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file sau khi tải'}) + "\n"
 
         except Exception as e:
-            # Gửi lỗi chi tiết về client để dễ debug
             yield json.dumps({'status': 'error', 'message': str(e)}) + "\n"
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
