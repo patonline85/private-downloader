@@ -2,21 +2,40 @@ import os
 import glob
 import json
 import time
-import shutil
+import subprocess
 from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, jsonify
 from yt_dlp import YoutubeDL
 
-# --- KHU VỰC SỬA LỖI (FIX ENVIRONMENT) ---
-# 1. Tìm xem node đang nằm ở đâu
-node_path = shutil.which('node') or '/usr/bin/node' or '/usr/local/bin/node'
+# --- KHU VỰC DEBUG & FIX MÔI TRƯỜNG (SYSTEM DIAGNOSTICS) ---
+print("--- BẮT ĐẦU KIỂM TRA MÔI TRƯỜNG GUNICORN ---")
 
-# 2. Ép đường dẫn này vào biến môi trường PATH để yt-dlp nhìn thấy
-if os.path.dirname(node_path) not in os.environ['PATH']:
-    os.environ['PATH'] = os.path.dirname(node_path) + ':' + os.environ['PATH']
+# 1. Ép thêm các đường dẫn chuẩn Linux vào biến môi trường
+# Đây là liều thuốc chữa bệnh "Gunicorn không thấy Node"
+standard_paths = ["/usr/bin/node", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin"]
+current_path = os.environ.get('PATH', '')
 
-print(f"✅ DEBUG: Node found at: {node_path}")
-print(f"✅ DEBUG: Current PATH: {os.environ['PATH']}")
-# -----------------------------------------
+for p in standard_paths:
+    if p not in current_path:
+        current_path = p + ":" + current_path
+
+os.environ['PATH'] = current_path
+print(f"✅ PATH đã cập nhật: {os.environ['PATH']}")
+
+# 2. Kiểm tra thực tế xem Python có gọi được Node không
+try:
+    node_version = subprocess.check_output(["node", "-v"]).decode().strip()
+    print(f"✅ NODEJS FOUND: {node_version}")
+except Exception as e:
+    print(f"❌ NODEJS ERROR: Không thể gọi lệnh 'node'. Lỗi: {str(e)}")
+    # Fallback: Thử tìm bằng lệnh which
+    try:
+        node_loc = subprocess.check_output(["which", "node"]).decode().strip()
+        print(f"⚠️ 'which node' trả về: {node_loc}")
+    except:
+        print("☠️ 'which node' cũng thất bại.")
+
+print("--- KẾT THÚC KIỂM TRA ---")
+# -----------------------------------------------------------
 
 app = Flask(__name__)
 
@@ -185,14 +204,12 @@ def index():
 @app.route('/analyze', methods=['POST'])
 def analyze():
     url = request.form.get('url')
-    # Cấu hình phân tích
     ydl_opts = {
         'cookiefile': 'cookies.txt',
         'quiet': True,
         'skip_download': True,
-        'ffmpeg_location': '/usr/bin/ffmpeg', # Chỉ định rõ ffmpeg
-        
-        # --- QUAN TRỌNG: Client Web ---
+        'ffmpeg_location': '/usr/bin/ffmpeg', 
+        # Sử dụng Web Client (đã có NodeJS để giải mã)
         'extractor_args': {'youtube': {'player_client': ['web']}},
     }
 
@@ -227,7 +244,6 @@ def analyze():
         video_opts.reverse(); audio_opts.reverse()
         return jsonify({'videos': video_opts, 'audios': audio_opts})
     except Exception as e:
-        # Trả về lỗi chi tiết để debug
         return jsonify({'error': str(e)})
 
 @app.route('/download_custom', methods=['POST'])
@@ -257,8 +273,6 @@ def download_custom():
             'quiet': True,
             'progress_hooks': [progress_hook],
             'extractor_args': {'youtube': {'player_client': ['web']}},
-            
-            # --- TẢI CHÍNH XÁC ID BẠN CHỌN VÀ GỘP MP4 ---
             'format': f"{vid_id}+{aud_id}",
             'merge_output_format': 'mp4' 
         }
