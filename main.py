@@ -15,7 +15,7 @@ app = FastAPI()
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# [AN TOÀN] Quay về dùng /tmp để tránh lỗi đầy RAM
+# Dùng /tmp cho an toàn trên Armbian
 TMP_DIR = '/tmp'
 os.makedirs(TMP_DIR, exist_ok=True)
 
@@ -23,7 +23,7 @@ HTML_CONTENT = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Tải Nhanh (Fast Mode)</title>
+    <title>Tải Video (Fix Treo)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root { --bg-color: #f4f1ea; --card-bg: #ffffff; --primary-color: #8d6e63; --accent-color: #5d4037; --text-color: #4e342e; --success-color: #689f38; --border-radius: 12px; }
@@ -59,7 +59,7 @@ HTML_CONTENT = """
                 <button type="button" class="icon-btn" onclick="clearLink()">Xóa</button>
             </div>
         </div>
-        <button id="submitBtn" onclick="startDownload()">Tải Nhanh (Auto MP4)</button>
+        <button id="submitBtn" onclick="startDownload()">Tải Video</button>
 
         <div class="progress-container" id="progressArea">
             <div class="progress-bg"><div class="progress-bar" id="progressBar"></div></div>
@@ -71,7 +71,7 @@ HTML_CONTENT = """
             <a href="#" id="finalLink" class="save-btn" onclick="resetUI()">Lưu Về Máy</a>
         </div>
         <p id="errorText" class="error-msg"></p>
-        <p class="note">SPEED MODE • STABLE</p>
+        <p class="note">FIXED MERGE • AUTO FORMAT</p>
     </div>
 
     <script>
@@ -82,7 +82,7 @@ HTML_CONTENT = """
             document.getElementById('downloadArea').style.display = 'none';
             document.getElementById('errorText').style.display = 'none';
             document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').innerText = "Tải Nhanh (Auto MP4)";
+            document.getElementById('submitBtn').innerText = "Tải Video";
         }
         function resetUI() { setTimeout(() => { clearLink(); }, 3000); }
 
@@ -121,7 +121,8 @@ HTML_CONTENT = """
                                 document.getElementById('statusText').innerText = `Tải: ${data.percent}% (${data.speed})`;
                             } else if (data.status === 'processing') {
                                 document.getElementById('progressBar').style.width = '100%';
-                                document.getElementById('statusText').innerText = 'Đang hoàn tất file...';
+                                // Hiển thị rõ trạng thái đang xử lý FFmpeg
+                                document.getElementById('statusText').innerText = '⏳ Đang xử lý file (Có thể mất 30s)...';
                             } else if (data.status === 'finished') {
                                 document.getElementById('progressBar').style.width = '100%';
                                 document.getElementById('statusText').innerText = 'Hoàn tất!';
@@ -163,10 +164,12 @@ async def stream_download(url: str = Form(...)):
         queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
-        # Cấu hình yt-dlp
+        # Cấu hình yt-dlp tối ưu
         ydl_opts = {
             'outtmpl': f'{TMP_DIR}/%(title).50s_{unique_id}.%(ext)s',
+            # Ưu tiên lấy file MP4 có sẵn để đỡ phải ghép
             'format': 'best[ext=mp4]/best',
+            # Nếu bắt buộc ghép thì dùng ultrafast
             'postprocessor_args': ['-preset', 'ultrafast'],
             'trim_file_name': 50,
             'restrictfilenames': True,
@@ -182,28 +185,35 @@ async def stream_download(url: str = Form(...)):
             ydl_opts['cookiefile'] = 'cookies.txt'
 
         def run_yt_dlp():
+            # Hook bắt quá trình tải (Download)
             def progress_hook(d):
                 if d['status'] == 'downloading':
                     p = d.get('_percent_str', '0%').replace('%','').strip()
                     s = d.get('_speed_str', 'N/A')
-                    data = json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
-                    loop.call_soon_threadsafe(queue.put_nowait, data)
+                    loop.call_soon_threadsafe(queue.put_nowait, json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n")
                 elif d['status'] == 'finished':
-                     # Báo hiệu sắp xong
+                     # Khi tải xong 100%, báo hiệu bắt đầu xử lý
                      loop.call_soon_threadsafe(queue.put_nowait, json.dumps({'status': 'processing'}) + "\n")
+
+            # Hook bắt quá trình xử lý FFmpeg (Post-processing)
+            # Giúp giao diện biết là Server vẫn đang sống
+            def postprocessor_hook(d):
+                if d['status'] == 'started':
+                    loop.call_soon_threadsafe(queue.put_nowait, json.dumps({'status': 'processing'}) + "\n")
 
             opts = ydl_opts.copy()
             opts['progress_hooks'] = [progress_hook]
+            opts['postprocessor_hooks'] = [postprocessor_hook] # <-- THÊM DÒNG NÀY
 
             try:
                 with YoutubeDL(opts) as ydl:
                     ydl.download([url])
+                # Báo hiệu đã xong hoàn toàn
                 loop.call_soon_threadsafe(queue.put_nowait, "DOWNLOAD_FINISHED")
             except Exception as e:
                 error_msg = str(e)
                 if "Requested format is not available" in error_msg: error_msg = "Lỗi định dạng."
-                err_data = json.dumps({'status': 'error', 'message': error_msg}) + "\n"
-                loop.call_soon_threadsafe(queue.put_nowait, err_data)
+                loop.call_soon_threadsafe(queue.put_nowait, json.dumps({'status': 'error', 'message': error_msg}) + "\n")
                 loop.call_soon_threadsafe(queue.put_nowait, "STOP")
 
         loop.run_in_executor(None, run_yt_dlp)
@@ -214,27 +224,27 @@ async def stream_download(url: str = Form(...)):
             if data == "STOP": break
                 
             if data == "DOWNLOAD_FINISHED":
-                # LOGIC TÌM FILE CHẮC CHẮN (Thử 3 lần)
+                # LOGIC TÌM FILE MỚI (QUAN TRỌNG)
+                # Tìm bất cứ file nào có chứa ID, bất kể đuôi là mp4 hay mkv
                 search_pattern = f'{TMP_DIR}/*{unique_id}*'
                 filename = None
                 
-                for i in range(3): # Thử tìm 3 lần, mỗi lần cách nhau 1s
+                # Thử tìm trong 5 giây (phòng trường hợp máy chậm ghi file chưa xong)
+                for i in range(5): 
                     found_files = glob.glob(search_pattern)
-                    valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
+                    # Lọc bỏ file rác (.part, .ytdl)
+                    valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl') and not f.endswith('.temp')]
                     
                     if valid_files:
+                        # Lấy file mới nhất hoặc lớn nhất
                         filename = os.path.basename(valid_files[0])
                         break
-                    
-                    # Nếu chưa thấy, đợi 1s rồi tìm lại (cho hệ thống kịp ghi file)
                     await asyncio.sleep(1.0)
                 
                 if filename:
                     yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
                 else:
-                    # In log ra để debug nếu cần
-                    print(f"DEBUG: Không tìm thấy file ID {unique_id} trong {TMP_DIR}")
-                    yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tìm thấy file sau khi tải.'}) + "\n"
+                    yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file kết quả (Timeout).'}) + "\n"
                 break
             
             yield data
