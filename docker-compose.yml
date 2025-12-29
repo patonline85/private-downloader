@@ -6,7 +6,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "5005:7000"  # Map cổng 5005 ngoài vào 8000 trong
+      - "5005:8000"  # Map cổng 5005 ngoài vào 8000 trong
     volumes:
       # Mount thư mục cookies nếu cần
       - /root/app_data/cookies.txt:/app/cookies.txt
@@ -17,4 +17,3 @@ services:
         limits:
           cpus: '1.5' # Nới lỏng CPU một chút cho việc ghép file
           memory: 2048M
-
