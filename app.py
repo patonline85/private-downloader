@@ -2,12 +2,100 @@ import os
 import glob
 import json
 import time
-from flask import Flask, render_template_string, request, send_file, Response, stream_with_context
+from flask import Flask, render_template_string, request, send_file, Response, stream_with_context, session, redirect, url_for
 from yt_dlp import YoutubeDL
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
-# --- GIAO DIỆN PHẬT GIÁO (NÂU ĐỎ - NỀN SÁNG) ---
+# --- CẤU HÌNH BẢO MẬT & SHEET ---
+# Secret key cho session
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'phap_mon_tam_linh_secret_key_999')
+
+# --- CẬP NHẬT: LẤY SHEET ID TỪ BIẾN MÔI TRƯỜNG ---
+SHEET_ID = os.environ.get('GOOGLE_SHEET_ID')
+SHEET_TAB_NAME = 'Users'
+
+def get_allowed_emails():
+    """Kết nối Google Sheet và lấy danh sách email được phép"""
+    try:
+        # Kiểm tra xem đã cấu hình ID chưa
+        if not SHEET_ID:
+            print("Lỗi: Chưa cấu hình biến môi trường GOOGLE_SHEET_ID")
+            return []
+
+        # Lấy credentials từ biến môi trường
+        private_key = os.environ.get('GOOGLE_PRIVATE_KEY', '').replace('\\n', '\n')
+        client_email = os.environ.get('GOOGLE_SERVICE_ACCOUNT_EMAIL', '')
+        
+        if not private_key or not client_email:
+            print("Lỗi: Thiếu biến môi trường Key hoặc Email Service Account")
+            return []
+
+        creds_dict = {
+            "type": "service_account",
+            "project_id": "generic-project",
+            "private_key_id": "generic-key-id",
+            "private_key": private_key,
+            "client_email": client_email,
+            "client_id": "generic-client-id",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{client_email}"
+        }
+
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        
+        sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_TAB_NAME)
+        # Lấy toàn bộ cột A (Cột 1)
+        emails = sheet.col_values(1)
+        # Làm sạch dữ liệu: chữ thường, bỏ khoảng trắng
+        return [e.strip().lower() for e in emails if '@' in e]
+    except Exception as e:
+        print(f"Lỗi kết nối Google Sheet: {str(e)}")
+        return []
+
+# --- GIAO DIỆN ĐĂNG NHẬP ---
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Đăng Nhập - Pháp Môn Tâm Linh</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <style>
+        :root { --bg-color: #f4f1ea; --card-bg: #ffffff; --accent-color: #5d4037; --text-color: #4e342e; --border-radius: 12px; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); display: flex; justify-content: center; align-items: center; min-height: 100dvh; margin: 0; color: var(--text-color); }
+        .container { background: var(--card-bg); padding: 40px 30px; border-radius: var(--border-radius); box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); width: 90%; max-width: 400px; border-top: 5px solid var(--accent-color); text-align: center; }
+        h2 { color: var(--accent-color); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .sub-title { font-size: 14px; color: #8d6e63; margin-bottom: 30px; font-style: italic; }
+        input { width: 100%; padding: 14px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); box-sizing: border-box; font-size: 16px; margin-bottom: 20px; outline: none; background: #fafafa; }
+        input:focus { border-color: var(--accent-color); background: #fff; }
+        button { background: var(--accent-color); color: white; border: none; padding: 16px; border-radius: var(--border-radius); cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 10px rgba(93, 64, 55, 0.3); }
+        button:hover { background: #3e2723; transform: translateY(-1px); }
+        .error { color: #c62828; margin-top: 15px; background: #ffebee; padding: 10px; border-radius: 8px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Pháp Môn Tâm Linh</h2>
+        <p class="sub-title">Vui lòng đăng nhập để tiếp tục</p>
+        <form method="POST">
+            <input type="email" name="email" placeholder="Nhập địa chỉ Email..." required>
+            <button type="submit">Đăng Nhập</button>
+        </form>
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+# --- GIAO DIỆN CHÍNH ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -25,14 +113,13 @@ HTML_TEMPLATE = """
             --border-radius: 12px;
         }
 
-        /* CẬP NHẬT: Giao diện neo lên trên (Top Align) */
         body { 
             font-family: 'Segoe UI', sans-serif; 
             background: var(--bg-color); 
             display: flex; 
             justify-content: center; 
             align-items: flex-start; /* Neo lên trên */
-            min-height: 100dvh; /* Chiều cao động */
+            min-height: 100dvh; 
             margin: 0; 
             color: var(--text-color);
             padding-top: 40px;
@@ -50,7 +137,12 @@ HTML_TEMPLATE = """
             margin-bottom: 40px; 
         }
 
-        .logo-wrapper { text-align: center; margin-bottom: 15px; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .logo-wrapper { flex-grow: 1; text-align: center; } 
+        .logout-btn { font-size: 12px; color: #a1887f; text-decoration: none; border: 1px solid #d7ccc8; padding: 4px 10px; border-radius: 15px; transition: 0.2s; }
+        .logout-btn:hover { background: #efebe9; color: var(--accent-color); }
+        .spacer { width: 50px; } 
+
         .logo-img { max-width: 100px; height: auto; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
 
         h2 { text-align: center; color: var(--accent-color); margin-bottom: 25px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
@@ -84,9 +176,14 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <div class="logo-wrapper">
-            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="logo-img">
+        <div class="header-row">
+            <div class="spacer"></div>
+            <div class="logo-wrapper">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="logo-img">
+            </div>
+            <a href="/logout" class="logout-btn">Thoát</a>
         </div>
+
         <h2>Pháp Môn Tâm Linh 心靈法門</h2>
         
         <div class="input-group">
@@ -213,12 +310,46 @@ HTML_TEMPLATE = """
 </html>
 """
 
+# --- ROUTE ĐĂNG NHẬP ---
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user' in session:
+        return redirect(url_for('index'))
+        
+    error = None
+    if request.method == 'POST':
+        email_input = request.form.get('email', '').strip().lower()
+        if not email_input:
+            error = "Vui lòng nhập địa chỉ email."
+        else:
+            allowed_users = get_allowed_emails()
+            if not allowed_users:
+                 error = "Không kết nối được danh sách thành viên (Lỗi ID/Key)."
+            elif email_input in allowed_users:
+                session['user'] = email_input
+                session.permanent = True
+                return redirect(url_for('index'))
+            else:
+                error = "Email này chưa được cấp quyền truy cập."
+    
+    return render_template_string(LOGIN_TEMPLATE, error=error)
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET'])
 def index():
+    if 'user' not in session:
+        return redirect(url_for('login'))
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/stream_download', methods=['POST'])
 def stream_download():
+    if 'user' not in session:
+         return Response(json.dumps({'status': 'error', 'message': 'Phiên đăng nhập hết hạn.'}), mimetype='application/json')
+
     url = request.form.get('url')
     mode = request.form.get('mode')
 
@@ -236,26 +367,19 @@ def stream_download():
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
 
-        # --- CẤU HÌNH FIX LỖI "FORMAT NOT AVAILABLE" ---
         ydl_opts = {
             'outtmpl': '/tmp/%(title)s.%(ext)s',
             'trim_file_name': 50,
             'restrictfilenames': False,
             'noplaylist': True,
-            # 'cookiefile': 'cookies.txt', # TẠM THỜI TẮT COOKIES ĐỂ TRÁNH BỊ FLAGGED
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
             'progress_hooks': [progress_hook],
-            # XÓA dòng 'extractor_args': ... 'ios' vì đôi khi nó gây lỗi định dạng với một số video
-            # Dùng User-Agent chung chung an toàn hơn
             'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         }
 
-        # --- LOGIC CHỌN ĐỊNH DẠNG "FAIL-SAFE" ---
         if mode == 'mp4_convert':
              ydl_opts.update({
-                # Ý nghĩa: Cố lấy Video H.264 + Audio M4A. 
-                # Dấu "/" nghĩa là: Nếu không có, thì lấy file MP4 đơn (b).
                 'format': 'bv*[vcodec^=avc]+ba[ext=m4a]/b[ext=mp4]/b',
                 'merge_output_format': 'mp4'
             })
@@ -265,22 +389,15 @@ def stream_download():
                 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
             })
         else: 
-            # MODE GỐC (Original)
-            # Ý nghĩa: bv*+ba (Tải rời ghép lại). Dấu "/" là cứu cánh: Nếu thất bại, lấy "best" (file đơn tốt nhất).
             ydl_opts.update({
                 'format': 'bv*+ba/b', 
-                'merge_output_format': 'mkv' # Ưu tiên đóng gói MKV nếu ghép được
+                'merge_output_format': 'mkv'
             })
 
         try:
             with YoutubeDL(ydl_opts) as ydl:
-                # Bước 1: Thử lấy info trước xem có bị chặn không (Optional nhưng an toàn)
-                # info = ydl.extract_info(url, download=False)
-                
-                # Bước 2: Tải thật
                 ydl.download([url])
             
-            # Tìm file kết quả
             files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part') and not f.endswith('.ytdl')]
             
             if files:
@@ -291,16 +408,16 @@ def stream_download():
                 yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tạo được file cuối cùng.'}) + "\n"
 
         except Exception as e:
-            # Clean up lỗi cho dễ đọc
             error_msg = str(e)
             if "Requested format is not available" in error_msg:
-                error_msg = "Video này chặn tải chất lượng cao (DRM hoặc IP Server bị chặn). Hệ thống đã thử tải SD nhưng thất bại."
+                error_msg = "Video này chặn tải chất lượng cao (DRM/IP). Đã thử tải SD nhưng thất bại."
             yield json.dumps({'status': 'error', 'message': error_msg}) + "\n"
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
 @app.route('/get_file/<filename>')
 def get_file(filename):
+    if 'user' not in session: return "Unauthorized", 401
     safe_path = os.path.join('/tmp', filename)
     if os.path.exists(safe_path):
         return send_file(safe_path, as_attachment=True)
@@ -308,6 +425,3 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-
-
