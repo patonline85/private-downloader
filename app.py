@@ -267,11 +267,12 @@ def stream_download():
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
 
+        # --- CẤU HÌNH FIX LỖI "FILE NAME TOO LONG" (TRIỆT ĐỂ) ---
         ydl_opts = {
-            'outtmpl': '/tmp/%(title)s.%(ext)s',
-            # Vẫn giữ trim_file_name để tránh lỗi OS (Linux thường giới hạn 255 bytes)
-            # 50 ký tự là an toàn tuyệt đối.
-            'trim_file_name': 50,
+            # QUAN TRỌNG: %(title).30s nghĩa là chỉ lấy 30 ký tự đầu của tiêu đề
+            # Thêm %(id)s để đảm bảo không bị trùng file nếu tiêu đề giống nhau
+            'outtmpl': '/tmp/%(title).30s-%(id)s.%(ext)s',
+            
             'restrictfilenames': False,
             'noplaylist': True,
             'ffmpeg_location': '/usr/bin/ffmpeg',
@@ -315,3 +316,4 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
