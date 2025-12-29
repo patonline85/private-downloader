@@ -1,22 +1,24 @@
-# Dùng Python 3.11 mới hơn để yt-dlp chạy mượt
+# Dùng Python 3.11 Slim
 FROM python:3.11-slim
 
-# Cài FFmpeg
+# Cài FFmpeg và dọn dẹp cache để giảm dung lượng ảnh
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Cài thư viện Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy mã nguồn
 COPY . .
 
-# Chạy với quyền Root để tránh lỗi Permission file cookies (như đã bàn)
+# Chạy quyền Root (để xử lý file tạm và cookies)
 USER root
 
 EXPOSE 5000
 
-# Tăng timeout lên 600s (10 phút) để tải video dài không bị ngắt
+# Timeout 600s = 10 phút (Cho video dài)
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "600", "app:app"]
