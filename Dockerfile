@@ -18,9 +18,8 @@ COPY . .
 # Chạy với quyền Root (như yêu cầu cũ)
 USER root
 
-# Expose port 7000 (Mặc định của Uvicorn/FastAPI)
-EXPOSE 7000
+# Expose port 8000 (Mặc định của Uvicorn/FastAPI)
+EXPOSE 8000
 
 # Lệnh chạy server bằng Uvicorn (FastAPI)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--workers", "4"]
-
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
