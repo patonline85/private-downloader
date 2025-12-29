@@ -5,7 +5,7 @@ from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# Giao diện HTML (Giữ nguyên bản ổn định của bạn)
+# --- CẤU HÌNH GIAO DIỆN HTML ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -14,9 +14,18 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 90%; max-width: 450px; }
-        h2 { text-align: center; color: #333; margin-bottom: 20px; }
-        .input-group { margin-bottom: 15px; }
+        .container { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 90%; max-width: 450px; text-align: center; } /* Thêm text-align center để căn giữa nội dung */
+        
+        /* CSS CHO LOGO */
+        .logo {
+            max-width: 120px;       /* Giới hạn chiều rộng logo */
+            height: auto;           /* Chiều cao tự động */
+            margin-bottom: 15px;    /* Khoảng cách với tiêu đề */
+            border-radius: 12px;    /* Bo tròn góc logo một chút cho mềm mại */
+        }
+
+        h2 { text-align: center; color: #333; margin-bottom: 20px; margin-top: 0; }
+        .input-group { margin-bottom: 15px; text-align: left; } /* Trả lại căn trái cho các ô nhập liệu */
         label { display: block; margin-bottom: 5px; font-weight: 600; color: #555; font-size: 0.9em; }
         input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
         select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; background: white; font-size: 16px; appearance: none; }
@@ -27,6 +36,8 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
+        <img src="/static/logo.png" alt="App Logo" class="logo">
+        
         <h2>🚀 Server Downloader</h2>
         <form method="POST" action="/download">
             <div class="input-group">
@@ -66,14 +77,9 @@ def download_video():
 
     # Cấu hình cơ bản
     ydl_opts = {
-        # --- SỬA ĐỔI QUAN TRỌNG: LẤY TÊN FILE GỐC ---
-        # %(title)s: Lấy tiêu đề video
-        # trim_file_name: Cắt ngắn nếu tên quá dài (tránh lỗi file system linux)
         'outtmpl': '/tmp/%(title)s.%(ext)s', 
         'trim_file_name': 50,
-        'restrictfilenames': False, # Cho phép tiếng Việt có dấu
-        # --------------------------------------------
-        
+        'restrictfilenames': False,
         'noplaylist': True,
         'cookiefile': 'cookies.txt',
         'ffmpeg_location': '/usr/bin/ffmpeg',
@@ -136,7 +142,7 @@ def download_video():
              else:
                  return "❌ Lỗi: Chỉ thấy file cookies, không thấy video.", 500
 
-        # Gửi file về (Flask sẽ tự lấy tên file từ biến latest_file)
+        # Gửi file về
         return send_file(latest_file, as_attachment=True)
 
     except Exception as e:
@@ -150,4 +156,3 @@ def download_video():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
