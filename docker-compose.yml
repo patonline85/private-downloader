@@ -3,17 +3,18 @@ version: '3.8'
 services:
   yt-downloader:
     container_name: private-downloader
-    build: .
+    build: https://github.com/patonline85/private-downloader.git#main
     restart: unless-stopped
     ports:
-      - "5005:8000"  # Map cổng 5005 ngoài vào 8000 trong
+      - "5005:8000"
     volumes:
-      # Mount thư mục cookies nếu cần
       - /root/app_data/cookies.txt:/app/cookies.txt
     environment:
       - MAX_WORKERS=4
     deploy:
       resources:
         limits:
-          cpus: '1.5' # Nới lỏng CPU một chút cho việc ghép file
-          memory: 2048M
+          # Bạn có 4GB, hãy cho nó dùng tối đa 3GB hoặc 3.5GB
+          # Hoặc tốt nhất là XÓA LUÔN phần deploy/resources này đi để nó tự điều phối
+          cpus: '2.0' 
+          memory: 3500M
