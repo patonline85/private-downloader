@@ -4,6 +4,7 @@ import uuid
 import threading
 import time
 import json
+import shutil
 from flask import Flask, render_template_string, request, send_file, jsonify
 from yt_dlp import YoutubeDL
 
@@ -11,10 +12,10 @@ app = Flask(__name__)
 
 # --- CẤU HÌNH ---
 TMP_DIR = '/tmp'
-STATUS_DIR = '/tmp/status' # Lưu file trạng thái vào đây
+STATUS_DIR = '/tmp/status'
 os.makedirs(STATUS_DIR, exist_ok=True)
+os.makedirs(TMP_DIR, exist_ok=True)
 
-# --- HÀM HỖ TRỢ LƯU TRẠNG THÁI RA FILE (Tránh lỗi Task not found) ---
 def save_status(task_id, data):
     with open(f'{STATUS_DIR}/{task_id}.json', 'w') as f:
         json.dump(data, f)
@@ -26,12 +27,11 @@ def load_status(task_id):
             return json.load(f)
     return None
 
-# --- GIAO DIỆN HTML ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pro Downloader V3 (Fixed)</title>
+    <title>Pro Downloader V4 (Final)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, sans-serif; background: #f2f2f7; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <img src="/static/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
-        <h2>Server Downloader V3</h2>
+        <h2>Server Downloader V4</h2>
         
         <div id="inputArea">
             <div class="input-group">
@@ -123,7 +123,7 @@ HTML_TEMPLATE = """
                         document.getElementById('saveLink').href = `/get_file/${data.filename}`;
                     } else if (data.status === 'error') {
                         clearInterval(interval);
-                        alert("Lỗi: " + data.message);
+                        alert(data.message);
                         location.reload();
                     }
                 } catch (e) {}
@@ -136,13 +136,12 @@ HTML_TEMPLATE = """
 
 def download_worker(task_id, url, mode):
     try:
-        save_status(task_id, {'status': 'processing', 'message': 'Đang khởi tạo...'})
+        save_status(task_id, {'status': 'processing', 'message': 'Đang kết nối Server...'})
         
-        # Dọn dẹp file cũ > 30p
-        current_time = time.time()
+        # Dọn dẹp file cũ
         for f in glob.glob(f'{TMP_DIR}/*'):
             try:
-                if os.path.isfile(f) and current_time - os.path.getmtime(f) > 1800: os.remove(f)
+                if os.path.isfile(f) and time.time() - os.path.getmtime(f) > 1800: os.remove(f)
             except: pass
 
         ydl_opts = {
@@ -153,15 +152,14 @@ def download_worker(task_id, url, mode):
             'cookiefile': 'cookies.txt',
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
-            # Tăng độ ổn định mạng
-            'retries': 10,
-            'fragment_retries': 10,
-            # Giả lập trình duyệt xịn
+            'retries': 5,
+            # Tự động fix lỗi nếu file bị kẹt ở .part
+            'fixup': 'detect_or_warn', 
             'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         }
 
         if mode == 'mp4_convert':
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải & Convert MP4...'})
+            save_status(task_id, {'status': 'processing', 'message': 'Đang tải và Convert MP4...'})
             ydl_opts.update({
                 'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                 'merge_output_format': 'mp4',
@@ -174,7 +172,7 @@ def download_worker(task_id, url, mode):
                 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
             })
         else:
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải 4K & Ghép file...'})
+            save_status(task_id, {'status': 'processing', 'message': 'Đang tải chất lượng cao...'})
             ydl_opts.update({
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mkv',
@@ -184,19 +182,33 @@ def download_worker(task_id, url, mode):
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # Tìm file kết quả
+        # --- LOGIC TÌM FILE THÔNG MINH (CỨU FILE .PART) ---
         search_pattern = f'{TMP_DIR}/*{task_id}*'
         found_files = glob.glob(search_pattern)
-        valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
-
+        
+        # 1. Tìm file hoàn chỉnh trước
+        valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl') and not f.endswith('.json')]
+        
         if valid_files:
             filename = os.path.basename(valid_files[0])
             save_status(task_id, {'status': 'done', 'filename': filename})
         else:
-            save_status(task_id, {'status': 'error', 'message': 'Lỗi: Không tìm thấy file kết quả.'})
+            # 2. Nếu không có file hoàn chỉnh, tìm file .part để đổi tên cứu dữ liệu
+            part_files = [f for f in found_files if f.endswith('.part')]
+            if part_files:
+                part_file = part_files[0]
+                new_name = part_file.replace('.part', '') # Xóa đuôi .part
+                try:
+                    os.rename(part_file, new_name)
+                    save_status(task_id, {'status': 'done', 'filename': os.path.basename(new_name)})
+                except Exception as e:
+                    save_status(task_id, {'status': 'error', 'message': f'Lỗi đổi tên file: {str(e)}'})
+            else:
+                # In ra danh sách file tìm thấy để debug
+                save_status(task_id, {'status': 'error', 'message': f'Lỗi: Không tìm thấy file. (Found: {str(found_files)})'})
 
     except Exception as e:
-        save_status(task_id, {'status': 'error', 'message': str(e)})
+        save_status(task_id, {'status': 'error', 'message': f'Lỗi hệ thống: {str(e)}'})
 
 @app.route('/')
 def index():
@@ -214,9 +226,8 @@ def start_download():
 @app.route('/check_status/<task_id>')
 def check_status(task_id):
     status = load_status(task_id)
-    if status:
-        return jsonify(status)
-    return jsonify({'status': 'error', 'message': 'Task not found'})
+    if status: return jsonify(status)
+    return jsonify({'status': 'error', 'message': 'Đang đợi Server...'})
 
 @app.route('/get_file/<filename>')
 def get_file(filename):
