@@ -1,242 +1,284 @@
 import os
 import glob
-import uuid
-import threading
-import time
 import json
-import shutil
-from flask import Flask, render_template_string, request, send_file, jsonify
+import time
+from flask import Flask, render_template_string, request, send_file, Response, stream_with_context
 from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
 
-# --- CẤU HÌNH ---
-TMP_DIR = '/tmp'
-STATUS_DIR = '/tmp/status'
-os.makedirs(STATUS_DIR, exist_ok=True)
-os.makedirs(TMP_DIR, exist_ok=True)
-
-def save_status(task_id, data):
-    with open(f'{STATUS_DIR}/{task_id}.json', 'w') as f:
-        json.dump(data, f)
-
-def load_status(task_id):
-    path = f'{STATUS_DIR}/{task_id}.json'
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as f: return json.load(f)
-        except: return None
-    return None
-
+# --- GIAO DIỆN PHẬT GIÁO (NÂU ĐỎ - NỀN SÁNG) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pro Downloader V6 (Stable)</title>
+    <title>Zen Downloader</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f2f2f7; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); width: 90%; max-width: 420px; text-align: center; }
-        .logo { max-width: 100px; margin-bottom: 10px; border-radius: 18px; }
-        h2 { margin: 10px 0 20px; color: #1c1c1e; font-size: 22px; }
-        .input-group { margin-bottom: 15px; text-align: left; }
-        label { font-size: 13px; font-weight: 600; color: #8e8e93; display: block; margin-bottom: 5px; text-transform: uppercase; }
-        input[type="text"], select { width: 100%; padding: 14px; border: 1px solid #e5e5ea; border-radius: 12px; font-size: 16px; background: #f9f9f9; box-sizing: border-box; }
-        .btn-main { background: #007aff; color: white; border: none; padding: 16px; border-radius: 14px; font-weight: bold; font-size: 17px; width: 100%; cursor: pointer; display: block; }
-        .btn-main:disabled { background: #aeaeb2; cursor: not-allowed; }
-        #statusArea { display: none; margin-top: 20px; padding: 15px; background: #f2f2f7; border-radius: 12px; }
-        .spinner { border: 4px solid rgba(0,0,0,0.1); width: 30px; height: 30px; border-radius: 50%; border-left-color: #007aff; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #resultArea { display: none; margin-top: 20px; }
-        .btn-save { background: #34c759; color: white; text-decoration: none; padding: 16px; border-radius: 14px; font-weight: bold; font-size: 17px; display: block; width: 100%; box-sizing: border-box; }
-        .ios-note { font-size: 13px; color: #8e8e93; margin-top: 15px; background: #fffbe6; padding: 10px; border-radius: 8px; border: 1px solid #fff5c2; display: none; }
+        /* Tông màu chủ đạo: Nâu đất, Đỏ trầm, Vàng đồng, Nền kem */
+        :root {
+            --bg-color: #f4f1ea;       /* Nền kem giấy cũ */
+            --card-bg: #ffffff;        /* Nền thẻ trắng */
+            --primary-color: #8d6e63;  /* Nâu đất nhạt */
+            --accent-color: #5d4037;   /* Nâu đỏ đậm (Màu áo cà sa trầm) */
+            --text-color: #4e342e;     /* Chữ nâu đen */
+            --success-color: #689f38;  /* Xanh rêu (Cây cối) */
+            --border-radius: 12px;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; color: var(--text-color); }
+        .container { background: var(--card-bg); padding: 30px; border-radius: var(--border-radius); box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); width: 90%; max-width: 480px; border-top: 5px solid var(--accent-color); }
+        h2 { text-align: center; color: var(--accent-color); margin-bottom: 25px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .input-group { position: relative; margin-bottom: 20px; }
+        input[type="text"] { width: 100%; padding: 14px 90px 14px 15px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); box-sizing: border-box; font-size: 16px; outline: none; transition: 0.3s; background: #fafafa; }
+        input[type="text"]:focus { border-color: var(--primary-color); background: #fff; }
+        
+        .action-btns { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 5px; }
+        .icon-btn { background: #efebe9; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--accent-color); font-weight: bold; }
+        .icon-btn:hover { background: #d7ccc8; }
+
+        select { width: 100%; padding: 14px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); background: #fff; font-size: 16px; margin-bottom: 20px; color: var(--text-color); }
+        
+        button#submitBtn { background: var(--accent-color); color: white; border: none; padding: 16px; border-radius: var(--border-radius); cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 10px rgba(93, 64, 55, 0.3); }
+        button#submitBtn:hover { background: #3e2723; transform: translateY(-1px); }
+        button#submitBtn:disabled { background: #bdbdbd; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .progress-container { margin-top: 25px; display: none; }
+        .progress-bg { width: 100%; background-color: #efebe9; border-radius: 20px; height: 10px; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; background-color: var(--success-color); transition: width 0.3s ease; }
+        .status-text { text-align: center; font-size: 0.9em; color: var(--primary-color); margin-top: 8px; font-style: italic; }
+
+        #downloadArea { display: none; margin-top: 25px; text-align: center; border-top: 1px dashed #d7ccc8; padding-top: 20px; }
+        .save-btn { display: inline-block; padding: 14px 35px; background: var(--success-color); color: white; text-decoration: none; border-radius: var(--border-radius); font-weight: bold; font-size: 16px; box-shadow: 0 4px 10px rgba(104, 159, 56, 0.3); }
+        .save-btn:hover { background: #558b2f; }
+        
+        .error-msg { color: #c62828; text-align: center; margin-top: 15px; display: none; background: #ffebee; padding: 12px; border-radius: 8px; font-size: 0.9em; }
+        .note { font-size: 12px; color: #a1887f; margin-top: 25px; text-align: center; }
     </style>
 </head>
 <body>
     <div class="container">
-        <img src="/static/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
-        <h2>Server Downloader V6</h2>
+        <h2>📥 Kho Tàng Video</h2>
         
-        <div id="inputArea">
-            <div class="input-group">
-                <label>Liên kết Video</label>
-                <input type="text" id="url" placeholder="Dán link vào đây..." required>
+        <div class="input-group">
+            <input type="text" id="url" placeholder="Dán liên kết vào đây..." required>
+            <div class="action-btns">
+                <button type="button" class="icon-btn" onclick="pasteLink()">Dán</button>
+                <button type="button" class="icon-btn" onclick="clearLink()">Xóa</button>
             </div>
-            <div class="input-group">
-                <label>Định dạng</label>
-                <select id="mode">
-                    <option value="original">⚡ Gốc (4K/8K MKV)</option>
-                    <option value="mp4_convert">📱 iPhone/Android (MP4)</option>
-                    <option value="audio_only">🎧 Âm thanh (MP3)</option>
-                </select>
-            </div>
-            <button class="btn-main" onclick="startTask()" id="startBtn">Bắt đầu tải</button>
         </div>
 
-        <div id="statusArea">
-            <div class="spinner"></div>
-            <div class="status-text" id="statusMsg">Đang kết nối...</div>
+        <select id="mode">
+            <option value="original">🌟 Nguyên Bản (MKV 4K/8K - Rõ Nhất)</option>
+            <option value="mp4_convert">📱 iPhone/Android (MP4 1080p)</option>
+            <option value="audio_only">🎧 Chỉ Lấy Âm Thanh (MP3)</option>
+        </select>
+
+        <button id="submitBtn" onclick="startDownload()">Bắt Đầu Tải Về</button>
+
+        <div class="progress-container" id="progressArea">
+            <div class="progress-bg">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="status-text" id="statusText">Đang kết nối...</div>
         </div>
 
-        <div id="resultArea">
-            <div style="margin-bottom: 10px; color: #34c759; font-weight: bold;">✅ Hoàn tất!</div>
-            <a href="#" id="saveLink" class="btn-save" download>📥 LƯU VIDEO</a>
-            <div class="ios-note" id="iosHint">💡 <b>iPhone:</b> Bấm nút trên, chọn "Lưu vào Tệp".</div>
-            <button onclick="location.reload()" style="background:none; border:none; color:#007aff; margin-top:15px; cursor:pointer;">Tải file khác</button>
+        <div id="downloadArea">
+            <p style="color: var(--success-color); font-weight: bold;">✅ Đã hoàn tất!</p>
+            <a href="#" id="finalLink" class="save-btn" onclick="resetUI()">Lưu Về Máy</a>
         </div>
+        
+        <p id="errorText" class="error-msg"></p>
+        <p class="note">Server Home Lab • Bình An & Tiện Lợi</p>
     </div>
 
     <script>
-        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) document.getElementById('iosHint').style.display = 'block';
+        async function pasteLink() {
+            try { document.getElementById('url').value = await navigator.clipboard.readText(); } 
+            catch (err) { alert('Vui lòng dán thủ công'); }
+        }
 
-        async function startTask() {
+        function clearLink() {
+            document.getElementById('url').value = '';
+            document.getElementById('progressArea').style.display = 'none';
+            document.getElementById('downloadArea').style.display = 'none';
+            document.getElementById('errorText').style.display = 'none';
+            document.getElementById('submitBtn').disabled = false;
+        }
+
+        function resetUI() {
+            setTimeout(() => { clearLink(); }, 3000);
+        }
+
+        async function startDownload() {
             const url = document.getElementById('url').value;
             const mode = document.getElementById('mode').value;
-            if (!url) return alert("Chưa nhập link!");
+            if (!url) return alert("Bạn chưa nhập liên kết!");
 
-            document.getElementById('inputArea').style.opacity = '0.5';
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('statusArea').style.display = 'block';
+            const btn = document.getElementById('submitBtn');
+            const progressArea = document.getElementById('progressArea');
+            const progressBar = document.getElementById('progressBar');
+            const statusText = document.getElementById('statusText');
+            const downloadArea = document.getElementById('downloadArea');
+            const errorText = document.getElementById('errorText');
+
+            btn.disabled = true;
+            btn.innerText = "⏳ Đang xử lý...";
+            downloadArea.style.display = 'none';
+            errorText.style.display = 'none';
+            progressArea.style.display = 'block';
+            progressBar.style.width = '5%';
+            statusText.innerText = 'Đang khởi động...';
 
             const formData = new FormData();
             formData.append('url', url);
             formData.append('mode', mode);
 
             try {
-                const res = await fetch('/start_download', { method: 'POST', body: formData });
-                const data = await res.json();
-                pollStatus(data.task_id);
-            } catch (err) { alert("Lỗi: " + err); location.reload(); }
-        }
+                const response = await fetch('/stream_download', { method: 'POST', body: formData });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
 
-        function pollStatus(taskId) {
-            const interval = setInterval(async () => {
-                try {
-                    const res = await fetch(`/check_status/${taskId}`);
-                    const data = await res.json();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\\n');
                     
-                    if (data.status === 'processing') {
-                        document.getElementById('statusMsg').innerText = data.message;
-                    } else if (data.status === 'done') {
-                        clearInterval(interval);
-                        document.getElementById('statusArea').style.display = 'none';
-                        document.getElementById('resultArea').style.display = 'block';
-                        document.getElementById('saveLink').href = `/get_file/${data.filename}`;
-                    } else if (data.status === 'error') {
-                        clearInterval(interval);
-                        alert(data.message);
-                        location.reload();
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const data = JSON.parse(line);
+                            if (data.status === 'downloading') {
+                                progressBar.style.width = data.percent + '%';
+                                statusText.innerText = `Đang tải: ${data.percent}% (${data.speed})`;
+                            } else if (data.status === 'merging') {
+                                progressBar.style.width = '98%';
+                                statusText.innerText = 'Đang ghép file... (Vui lòng đợi)';
+                            } else if (data.status === 'finished') {
+                                progressBar.style.width = '100%';
+                                statusText.innerText = 'Thành công!';
+                                document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename);
+                                downloadArea.style.display = 'block';
+                                btn.innerText = "Tải File Khác";
+                                btn.disabled = false;
+                            } else if (data.status === 'error') {
+                                throw new Error(data.message);
+                            }
+                        } catch (err) {
+                            if (err.message && !err.message.includes("JSON")) {
+                                throw err;
+                            }
+                        }
                     }
-                } catch (e) {}
-            }, 1000);
+                }
+            } catch (error) {
+                errorText.innerText = "Lỗi: " + error.message;
+                errorText.style.display = 'block';
+                btn.disabled = false;
+                btn.innerText = "Thử Lại";
+                progressArea.style.display = 'none';
+            }
         }
     </script>
 </body>
 </html>
 """
 
-def download_worker(task_id, url, mode):
-    try:
-        save_status(task_id, {'status': 'processing', 'message': 'Đang kết nối Server...'})
-        
-        # Dọn dẹp file cũ
-        for f in glob.glob(f'{TMP_DIR}/*'):
-            try:
-                if os.path.isfile(f) and time.time() - os.path.getmtime(f) > 1800: os.remove(f)
-            except: pass
-
-        ydl_opts = {
-            'outtmpl': f'{TMP_DIR}/%(title).50s_{task_id}.%(ext)s',
-            'trim_file_name': 50,
-            'restrictfilenames': True,
-            'noplaylist': True,
-            'cookiefile': 'cookies.txt',
-            'ffmpeg_location': '/usr/bin/ffmpeg',
-            'quiet': True,
-            'http_chunk_size': 10485760, # Tải từng gói 10MB
-            'retries': 30,
-            'socket_timeout': 30,
-            
-            # --- QUAN TRỌNG: CẤU HÌNH KHÔI PHỤC (KHÔNG DÙNG ANDROID CLIENT NỮA) ---
-            # Xóa dòng extractor_args cũ gây lỗi
-            
-            # Dùng User-Agent của PC để ít bị nghi ngờ
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
-        }
-
-        if mode == 'mp4_convert':
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải & Convert MP4...'})
-            ydl_opts.update({
-                'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-                'merge_output_format': 'mp4',
-                'postprocessor_args': ['-preset', 'ultrafast'],
-            })
-        elif mode == 'audio_only':
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tách nhạc...'})
-            ydl_opts.update({
-                'format': 'bestaudio/best',
-                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
-            })
-        else:
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải 4K & Ghép file...'})
-            ydl_opts.update({
-                'format': 'bestvideo+bestaudio/best',
-                'merge_output_format': 'mkv',
-                'postprocessor_args': ['-preset', 'ultrafast'],
-            })
-
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-        # Tìm file kết quả
-        search_pattern = f'{TMP_DIR}/*{task_id}*'
-        found_files = glob.glob(search_pattern)
-        valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl') and not f.endswith('.json')]
-        
-        if valid_files:
-            filename = os.path.basename(valid_files[0])
-            save_status(task_id, {'status': 'done', 'filename': filename})
-        else:
-            # Cứu file .part
-            part_files = [f for f in found_files if f.endswith('.part')]
-            if part_files:
-                try:
-                    new_name = part_files[0].replace('.part', '')
-                    os.rename(part_files[0], new_name)
-                    save_status(task_id, {'status': 'done', 'filename': os.path.basename(new_name)})
-                except: save_status(task_id, {'status': 'error', 'message': 'Lỗi đổi tên file'})
-            else:
-                save_status(task_id, {'status': 'error', 'message': 'Không tìm thấy file (Bị chặn hoặc lỗi Cookies)'})
-
-    except Exception as e:
-        save_status(task_id, {'status': 'error', 'message': f'Lỗi: {str(e)}'})
-
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/start_download', methods=['POST'])
-def start_download():
-    task_id = uuid.uuid4().hex
+@app.route('/stream_download', methods=['POST'])
+def stream_download():
     url = request.form.get('url')
     mode = request.form.get('mode')
-    thread = threading.Thread(target=download_worker, args=(task_id, url, mode))
-    thread.start()
-    return jsonify({'task_id': task_id})
 
-@app.route('/check_status/<task_id>')
-def check_status(task_id):
-    status = load_status(task_id)
-    if status: return jsonify(status)
-    return jsonify({'status': 'error', 'message': 'Đang đợi Server...'})
+    def generate():
+        # Dọn dẹp file cũ
+        for f in glob.glob('/tmp/*'):
+            try: os.remove(f)
+            except: pass
+
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                p = d.get('_percent_str', '0%').replace('%','').strip()
+                s = d.get('_speed_str', 'N/A')
+                yield json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
+            elif d['status'] == 'finished':
+                yield json.dumps({'status': 'merging'}) + "\n"
+
+        # --- CẤU HÌNH FIX LỖI "FORMAT NOT AVAILABLE" ---
+        ydl_opts = {
+            'outtmpl': '/tmp/%(title)s.%(ext)s',
+            'trim_file_name': 200,
+            'restrictfilenames': False,
+            'noplaylist': True,
+            # 'cookiefile': 'cookies.txt', # TẠM THỜI TẮT COOKIES ĐỂ TRÁNH BỊ FLAGGED
+            'ffmpeg_location': '/usr/bin/ffmpeg',
+            'quiet': True,
+            'progress_hooks': [progress_hook],
+            # XÓA dòng 'extractor_args': ... 'ios' vì đôi khi nó gây lỗi định dạng với một số video
+            # Dùng User-Agent chung chung an toàn hơn
+            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        }
+
+        # --- LOGIC CHỌN ĐỊNH DẠNG "FAIL-SAFE" ---
+        if mode == 'mp4_convert':
+             ydl_opts.update({
+                # Ý nghĩa: Cố lấy Video H.264 + Audio M4A. 
+                # Dấu "/" nghĩa là: Nếu không có, thì lấy file MP4 đơn (b).
+                'format': 'bv*[vcodec^=avc]+ba[ext=m4a]/b[ext=mp4]/b',
+                'merge_output_format': 'mp4'
+            })
+        elif mode == 'audio_only':
+            ydl_opts.update({
+                'format': 'bestaudio/best',
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+            })
+        else: 
+            # MODE GỐC (Original)
+            # Ý nghĩa: bv*+ba (Tải rời ghép lại). Dấu "/" là cứu cánh: Nếu thất bại, lấy "best" (file đơn tốt nhất).
+            ydl_opts.update({
+                'format': 'bv*+ba/b', 
+                'merge_output_format': 'mkv' # Ưu tiên đóng gói MKV nếu ghép được
+            })
+
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                # Bước 1: Thử lấy info trước xem có bị chặn không (Optional nhưng an toàn)
+                # info = ydl.extract_info(url, download=False)
+                
+                # Bước 2: Tải thật
+                ydl.download([url])
+            
+            # Tìm file kết quả
+            files = [f for f in glob.glob('/tmp/*') if not f.endswith('.txt') and not f.endswith('.part') and not f.endswith('.ytdl')]
+            
+            if files:
+                final_file = max(files, key=os.path.getctime)
+                filename = os.path.basename(final_file)
+                yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
+            else:
+                yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tạo được file cuối cùng.'}) + "\n"
+
+        except Exception as e:
+            # Clean up lỗi cho dễ đọc
+            error_msg = str(e)
+            if "Requested format is not available" in error_msg:
+                error_msg = "Video này chặn tải chất lượng cao (DRM hoặc IP Server bị chặn). Hệ thống đã thử tải SD nhưng thất bại."
+            yield json.dumps({'status': 'error', 'message': error_msg}) + "\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/plain')
 
 @app.route('/get_file/<filename>')
 def get_file(filename):
-    return send_file(os.path.join(TMP_DIR, filename), as_attachment=True)
+    safe_path = os.path.join('/tmp', filename)
+    if os.path.exists(safe_path):
+        return send_file(safe_path, as_attachment=True)
+    return "Not Found", 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
