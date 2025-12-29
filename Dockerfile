@@ -1,9 +1,9 @@
 FROM python:3.11-slim
 
-# Tắt hỏi đáp khi cài đặt
+# Tắt hỏi đáp khi cài đặt (Sửa lỗi debconf)
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Cài FFmpeg nhẹ nhàng
+# Cài FFmpeg
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/*
@@ -18,5 +18,5 @@ COPY . .
 USER root
 EXPOSE 8000
 
-# Lệnh chạy quan trọng: main:app
+# Lệnh chạy file main.py
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
