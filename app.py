@@ -12,7 +12,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Zen Downloader</title>
+    <title>Pháp Môn Tâm Linh 心靈法門</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         /* Tông màu chủ đạo: Nâu đất, Đỏ trầm, Vàng đồng, Nền kem */
@@ -284,3 +284,4 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
