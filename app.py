@@ -23,15 +23,16 @@ def save_status(task_id, data):
 def load_status(task_id):
     path = f'{STATUS_DIR}/{task_id}.json'
     if os.path.exists(path):
-        with open(path, 'r') as f:
-            return json.load(f)
+        try:
+            with open(path, 'r') as f: return json.load(f)
+        except: return None
     return None
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pro Downloader V4 (Final)</title>
+    <title>Pro Downloader V5 (Anti-Throttle)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, sans-serif; background: #f2f2f7; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -54,7 +55,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <img src="/static/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
-        <h2>Server Downloader V4</h2>
+        <h2>Server Downloader V5</h2>
         
         <div id="inputArea">
             <div class="input-group">
@@ -152,7 +153,13 @@ def download_worker(task_id, url, mode):
             'cookiefile': 'cookies.txt',
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
-            'retries': 5,
+            
+            # --- CẤU HÌNH CHỐNG THROTTLING (BÓP BĂNG THÔNG) ---
+            'http_chunk_size': 10485760,  # 10MB: Tải từng gói nhỏ thay vì tải 1 cục
+            'retries': 50,                # Thử lại 50 lần nếu rớt mạng
+            'fragment_retries': 50,       # Thử lại 50 lần nếu lỗi file con
+            'socket_timeout': 15,         # Nếu server im lặng 15s thì cắt kết nối tải lại ngay (tránh treo Unknown B/s)
+            
             # Tự động fix lỗi nếu file bị kẹt ở .part
             'fixup': 'detect_or_warn', 
             'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
@@ -172,8 +179,10 @@ def download_worker(task_id, url, mode):
                 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
             })
         else:
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải chất lượng cao...'})
+            save_status(task_id, {'status': 'processing', 'message': 'Đang tải 4K & Ghép file...'})
             ydl_opts.update({
+                # Thay đổi: Ưu tiên Android Client để tải 4K ổn định hơn Web Client
+                'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mkv',
                 'postprocessor_args': ['-preset', 'ultrafast'],
@@ -182,30 +191,27 @@ def download_worker(task_id, url, mode):
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # --- LOGIC TÌM FILE THÔNG MINH (CỨU FILE .PART) ---
+        # --- LOGIC TÌM FILE THÔNG MINH ---
         search_pattern = f'{TMP_DIR}/*{task_id}*'
         found_files = glob.glob(search_pattern)
-        
-        # 1. Tìm file hoàn chỉnh trước
         valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl') and not f.endswith('.json')]
         
         if valid_files:
             filename = os.path.basename(valid_files[0])
             save_status(task_id, {'status': 'done', 'filename': filename})
         else:
-            # 2. Nếu không có file hoàn chỉnh, tìm file .part để đổi tên cứu dữ liệu
+            # Cứu file .part nếu tải gần xong mà bị ngắt
             part_files = [f for f in found_files if f.endswith('.part')]
             if part_files:
                 part_file = part_files[0]
-                new_name = part_file.replace('.part', '') # Xóa đuôi .part
+                new_name = part_file.replace('.part', '')
                 try:
                     os.rename(part_file, new_name)
                     save_status(task_id, {'status': 'done', 'filename': os.path.basename(new_name)})
                 except Exception as e:
                     save_status(task_id, {'status': 'error', 'message': f'Lỗi đổi tên file: {str(e)}'})
             else:
-                # In ra danh sách file tìm thấy để debug
-                save_status(task_id, {'status': 'error', 'message': f'Lỗi: Không tìm thấy file. (Found: {str(found_files)})'})
+                save_status(task_id, {'status': 'error', 'message': 'Lỗi: Không tìm thấy file kết quả.'})
 
     except Exception as e:
         save_status(task_id, {'status': 'error', 'message': f'Lỗi hệ thống: {str(e)}'})
