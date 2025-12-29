@@ -2,34 +2,25 @@ version: '3.8'
 
 services:
   yt-downloader:
-    # Build từ thư mục hiện tại
     build: .
     container_name: private-downloader
     restart: unless-stopped
-    
-    # Map port 5005 (Host) -> 5000 (Container)
     ports:
       - "5005:5000"
     
-    # --- CẤU HÌNH QUAN TRỌNG MỚI THÊM ---
-    # Đọc biến môi trường từ file .env để bảo mật Key
+    # Load biến môi trường (Sheet ID, Key, Secret)
     env_file:
       - .env
-    # -------------------------------------
 
-    # Chạy Gunicorn
-    command: gunicorn -w 4 -b 0.0.0.0:5000 --timeout 600 app:app
-    
-    # Chạy quyền Root (cần thiết để lưu file và gọi FFmpeg)
-    user: root
+    # Dockerfile đã có CMD gunicorn, không cần viết lại ở đây
+    # user: root -> Dockerfile cũng đã set root, có thể bỏ dòng này hoặc giữ để tường minh đều được.
+    user: root 
     
     volumes:
-      # Map file cookies (Bạn nhớ tạo file này trên máy host trước khi chạy)
+      # Đảm bảo file này tồn tại trên máy chủ (dù là file rỗng)
       - /root/app_data/cookies.txt:/app/cookies.txt
-      # (Khuyên dùng) Map thư mục tmp để dễ debug file tải về nếu lỗi
       - ./tmp_downloads:/tmp
 
-    # Giới hạn tài nguyên (giữ nguyên như của bạn)
     deploy:
       resources:
         limits:
