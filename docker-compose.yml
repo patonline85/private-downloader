@@ -2,24 +2,36 @@ version: '3.8'
 
 services:
   yt-downloader:
-    command: gunicorn -w 4 -b 0.0.0.0:5000 --timeout 600 app:app
+    # Build từ thư mục hiện tại
+    build: .
     container_name: private-downloader
-    build: .  # Build từ thư mục hiện tại
     restart: unless-stopped
+    
+    # Map port 5005 (Host) -> 5000 (Container)
     ports:
-      - "5005:5000" # Map port 5005 của Armbian vào 5000 của Container
-    environment:
-      - WORKERS=4
+      - "5005:5000"
+    
+    # --- CẤU HÌNH QUAN TRỌNG MỚI THÊM ---
+    # Đọc biến môi trường từ file .env để bảo mật Key
+    env_file:
+      - .env
+    # -------------------------------------
+
+    # Chạy Gunicorn
+    command: gunicorn -w 4 -b 0.0.0.0:5000 --timeout 600 app:app
+    
+    # Chạy quyền Root (cần thiết để lưu file và gọi FFmpeg)
     user: root
+    
     volumes:
-      # (Tuỳ chọn) Mount thư mục cookies nếu sau này cần tải video membership/bị giới hạn tuổi
+      # Map file cookies (Bạn nhớ tạo file này trên máy host trước khi chạy)
       - /root/app_data/cookies.txt:/app/cookies.txt
-    # Giới hạn tài nguyên để không treo Armbian (Tuỳ cấu hình máy bạn)
+      # (Khuyên dùng) Map thư mục tmp để dễ debug file tải về nếu lỗi
+      - ./tmp_downloads:/tmp
+
+    # Giới hạn tài nguyên (giữ nguyên như của bạn)
     deploy:
       resources:
         limits:
           cpus: '1.0'
-
           memory: 2048M
-
-
