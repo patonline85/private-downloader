@@ -1,3 +1,4 @@
 Flask
-yt-dlp
 gunicorn
+# yt-dlp sẽ được Dockerfile cài từ git, nhưng để đây cho chắc
+yt-dlp>=2024.08.01
