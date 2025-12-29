@@ -1,7 +1,3 @@
-fastapi
-uvicorn[standard]
-python-multipart
-jinja2
-# Cài bản yt-dlp mới nhất từ source để fix lỗi Facebook thay đổi API
-yt-dlp>=2024.08.06
-aiofiles
+Flask
+yt-dlp
+gunicorn
