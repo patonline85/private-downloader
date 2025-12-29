@@ -3,17 +3,18 @@ version: '3.8'
 services:
   yt-downloader:
     container_name: private-downloader
-    build: .
+    build: .  # Build từ thư mục hiện tại
     restart: unless-stopped
     ports:
-      - "5005:8000"  # Map cổng 5005 ngoài vào 8000 trong
-    volumes:
-      # Mount thư mục cookies nếu cần
-      - /root/app_data/cookies.txt:/app/cookies.txt
+      - "5005:5000" # Map port 5005 của Armbian vào 5000 của Container
     environment:
-      - MAX_WORKERS=4
+      - WORKERS=4
+    volumes:
+      # (Tuỳ chọn) Mount thư mục cookies nếu sau này cần tải video membership/bị giới hạn tuổi
+      - ./cookies.txt:/app/cookies.txt
+    # Giới hạn tài nguyên để không treo Armbian (Tuỳ cấu hình máy bạn)
     deploy:
       resources:
         limits:
-          cpus: '1.5' # Nới lỏng CPU một chút cho việc ghép file
-          memory: 2048M
+          cpus: '1.0'
+          memory: 512M
