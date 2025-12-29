@@ -13,21 +13,43 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <title>Pháp Môn Tâm Linh 心靈法門</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <style>
-        /* Tông màu chủ đạo: Nâu đất, Đỏ trầm, Vàng đồng, Nền kem */
         :root {
-            --bg-color: #f4f1ea;       /* Nền kem giấy cũ */
-            --card-bg: #ffffff;        /* Nền thẻ trắng */
-            --primary-color: #8d6e63;  /* Nâu đất nhạt */
-            --accent-color: #5d4037;   /* Nâu đỏ đậm (Màu áo cà sa trầm) */
-            --text-color: #4e342e;     /* Chữ nâu đen */
-            --success-color: #689f38;  /* Xanh rêu (Cây cối) */
+            --bg-color: #f4f1ea;
+            --card-bg: #ffffff;
+            --primary-color: #8d6e63;
+            --accent-color: #5d4037;
+            --text-color: #4e342e;
+            --success-color: #689f38;
             --border-radius: 12px;
         }
 
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; color: var(--text-color); }
-        .container { background: var(--card-bg); padding: 30px; border-radius: var(--border-radius); box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); width: 90%; max-width: 480px; border-top: 5px solid var(--accent-color); }
+        /* CẬP NHẬT: Giao diện neo lên trên (Top Align) */
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: var(--bg-color); 
+            display: flex; 
+            justify-content: center; 
+            align-items: flex-start; /* Neo lên trên */
+            min-height: 100dvh; /* Chiều cao động */
+            margin: 0; 
+            color: var(--text-color);
+            padding-top: 40px;
+            box-sizing: border-box;
+        }
+
+        .container { 
+            background: var(--card-bg); 
+            padding: 30px; 
+            border-radius: var(--border-radius); 
+            box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); 
+            width: 90%; 
+            max-width: 480px; 
+            border-top: 5px solid var(--accent-color); 
+            margin-bottom: 40px; 
+        }
+
         .logo-wrapper { text-align: center; margin-bottom: 15px; }
         .logo-img { max-width: 100px; height: auto; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
 
@@ -76,9 +98,8 @@ HTML_TEMPLATE = """
         </div>
 
         <select id="mode">
-            <option value="original">🌟 Nguyên Bản (MKV 4K/8K - Rõ Nhất)</option>
-            <option value="mp4_convert">📱 iPhone/Android (MP4 1080p)</option>
-            <option value="audio_only">🎧 Chỉ Lấy Âm Thanh (MP3)</option>
+            <option value="mp4_convert">📱 Tải Video (MP4 - Xem trên mọi thiết bị)</option>
+            <option value="audio_only">🎧 Tải Âm Thanh (MP3 - Nghe đài)</option>
         </select>
 
         <button id="submitBtn" onclick="startDownload()">Bắt Đầu Tải Về</button>
@@ -287,5 +308,6 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
