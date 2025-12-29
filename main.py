@@ -15,13 +15,10 @@ app = FastAPI()
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Ưu tiên RAM Disk (/dev/shm) để tải siêu tốc
-TMP_DIR = '/dev/shm' 
-if not os.path.exists(TMP_DIR):
-    TMP_DIR = '/tmp'
+# [AN TOÀN] Quay về dùng /tmp để tránh lỗi đầy RAM
+TMP_DIR = '/tmp'
 os.makedirs(TMP_DIR, exist_ok=True)
 
-# --- GIAO DIỆN (GIỮ NGUYÊN) ---
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html>
@@ -74,7 +71,7 @@ HTML_CONTENT = """
             <a href="#" id="finalLink" class="save-btn" onclick="resetUI()">Lưu Về Máy</a>
         </div>
         <p id="errorText" class="error-msg"></p>
-        <p class="note">SPEED MODE • RAM DISK OPTIMIZED</p>
+        <p class="note">SPEED MODE • STABLE</p>
     </div>
 
     <script>
@@ -122,9 +119,9 @@ HTML_CONTENT = """
                             if (data.status === 'downloading') {
                                 document.getElementById('progressBar').style.width = data.percent + '%';
                                 document.getElementById('statusText').innerText = `Tải: ${data.percent}% (${data.speed})`;
-                            } else if (data.status === 'merging') {
-                                document.getElementById('progressBar').style.width = '95%';
-                                document.getElementById('statusText').innerText = 'Đang ghép file...';
+                            } else if (data.status === 'processing') {
+                                document.getElementById('progressBar').style.width = '100%';
+                                document.getElementById('statusText').innerText = 'Đang hoàn tất file...';
                             } else if (data.status === 'finished') {
                                 document.getElementById('progressBar').style.width = '100%';
                                 document.getElementById('statusText').innerText = 'Hoàn tất!';
@@ -154,16 +151,16 @@ async def index():
 @app.post("/stream_download")
 async def stream_download(url: str = Form(...)):
     async def generate():
-        # Dọn dẹp file cũ
+        # Dọn dẹp file cũ > 30 phút
         current_time = time.time()
         for f in glob.glob(f'{TMP_DIR}/*'):
             try:
-                if os.path.isfile(f) and (current_time - os.path.getmtime(f)) > 1200:
+                if os.path.isfile(f) and (current_time - os.path.getmtime(f)) > 1800:
                     os.remove(f)
             except: pass
 
         unique_id = str(uuid.uuid4())[:8]
-        queue = asyncio.Queue() # Hàng đợi để chuyển dữ liệu từ Thread ra HTTP
+        queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
         # Cấu hình yt-dlp
@@ -185,14 +182,15 @@ async def stream_download(url: str = Form(...)):
             ydl_opts['cookiefile'] = 'cookies.txt'
 
         def run_yt_dlp():
-            # Hook này chạy trong Thread riêng
             def progress_hook(d):
                 if d['status'] == 'downloading':
                     p = d.get('_percent_str', '0%').replace('%','').strip()
                     s = d.get('_speed_str', 'N/A')
-                    # Đẩy dữ liệu vào hàng đợi (Queue) thay vì print
                     data = json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
                     loop.call_soon_threadsafe(queue.put_nowait, data)
+                elif d['status'] == 'finished':
+                     # Báo hiệu sắp xong
+                     loop.call_soon_threadsafe(queue.put_nowait, json.dumps({'status': 'processing'}) + "\n")
 
             opts = ydl_opts.copy()
             opts['progress_hooks'] = [progress_hook]
@@ -200,41 +198,45 @@ async def stream_download(url: str = Form(...)):
             try:
                 with YoutubeDL(opts) as ydl:
                     ydl.download([url])
-                # Báo hiệu đã xong phần download
                 loop.call_soon_threadsafe(queue.put_nowait, "DOWNLOAD_FINISHED")
             except Exception as e:
-                # Báo lỗi vào queue
                 error_msg = str(e)
                 if "Requested format is not available" in error_msg: error_msg = "Lỗi định dạng."
                 err_data = json.dumps({'status': 'error', 'message': error_msg}) + "\n"
                 loop.call_soon_threadsafe(queue.put_nowait, err_data)
                 loop.call_soon_threadsafe(queue.put_nowait, "STOP")
 
-        # Chạy yt-dlp trong background thread
         loop.run_in_executor(None, run_yt_dlp)
 
-        # Vòng lặp chính: Lấy dữ liệu từ Queue và gửi về trình duyệt
         while True:
-            # Chờ dữ liệu từ queue
             data = await queue.get()
             
-            if data == "STOP":
-                break
+            if data == "STOP": break
                 
             if data == "DOWNLOAD_FINISHED":
-                # Tìm file kết quả sau khi tải xong
+                # LOGIC TÌM FILE CHẮC CHẮN (Thử 3 lần)
                 search_pattern = f'{TMP_DIR}/*{unique_id}*'
-                found_files = glob.glob(search_pattern)
-                valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
-
-                if valid_files:
-                    filename = os.path.basename(valid_files[0])
+                filename = None
+                
+                for i in range(3): # Thử tìm 3 lần, mỗi lần cách nhau 1s
+                    found_files = glob.glob(search_pattern)
+                    valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
+                    
+                    if valid_files:
+                        filename = os.path.basename(valid_files[0])
+                        break
+                    
+                    # Nếu chưa thấy, đợi 1s rồi tìm lại (cho hệ thống kịp ghi file)
+                    await asyncio.sleep(1.0)
+                
+                if filename:
                     yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
                 else:
-                    yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file.'}) + "\n"
+                    # In log ra để debug nếu cần
+                    print(f"DEBUG: Không tìm thấy file ID {unique_id} trong {TMP_DIR}")
+                    yield json.dumps({'status': 'error', 'message': 'Lỗi: Không tìm thấy file sau khi tải.'}) + "\n"
                 break
             
-            # Gửi dữ liệu tiến trình (percent, speed) về client
             yield data
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
