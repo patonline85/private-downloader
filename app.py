@@ -70,7 +70,7 @@ def download_video():
         # %(title)s: Lấy tiêu đề video
         # trim_file_name: Cắt ngắn nếu tên quá dài (tránh lỗi file system linux)
         'outtmpl': '/tmp/%(title)s.%(ext)s', 
-        'trim_file_name': 200,
+        'trim_file_name': 50,
         'restrictfilenames': False, # Cho phép tiếng Việt có dấu
         # --------------------------------------------
         
@@ -150,3 +150,4 @@ def download_video():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
