@@ -59,7 +59,10 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>📥 Kho Tàng Video</h2>
+        <div class="logo-wrapper">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="logo-img">
+        </div>
+        <h2>Pháp Môn Tâm Linh 心靈法門</h2>
         
         <div class="input-group">
             <input type="text" id="url" placeholder="Dán liên kết vào đây..." required>
@@ -90,7 +93,7 @@ HTML_TEMPLATE = """
         </div>
         
         <p id="errorText" class="error-msg"></p>
-        <p class="note">Server Home Lab • Bình An & Tiện Lợi</p>
+        <p class="note"> • Bình An & Tiện Lợi • </p>
     </div>
 
     <script>
@@ -212,7 +215,7 @@ def stream_download():
         # --- CẤU HÌNH FIX LỖI "FORMAT NOT AVAILABLE" ---
         ydl_opts = {
             'outtmpl': '/tmp/%(title)s.%(ext)s',
-            'trim_file_name': 200,
+            'trim_file_name': 50,
             'restrictfilenames': False,
             'noplaylist': True,
             # 'cookiefile': 'cookies.txt', # TẠM THỜI TẮT COOKIES ĐỂ TRÁNH BỊ FLAGGED
@@ -281,4 +284,3 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
