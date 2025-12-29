@@ -15,16 +15,13 @@ app = FastAPI()
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# [TỐI ƯU 1] SỬ DỤNG RAM DISK (/dev/shm) ĐỂ TĂNG TỐC ĐỘ ĐỌC GHI
-# Nếu file quá lớn (>RAM), Docker có thể lỗi. Nếu tải file <500MB thì thoải mái.
-# Nếu gặp lỗi bộ nhớ, hãy đổi lại thành '/tmp'
+# Ưu tiên RAM Disk (/dev/shm) để tải siêu tốc
 TMP_DIR = '/dev/shm' 
 if not os.path.exists(TMP_DIR):
     TMP_DIR = '/tmp'
-    
-# Vẫn đảm bảo folder tồn tại
 os.makedirs(TMP_DIR, exist_ok=True)
 
+# --- GIAO DIỆN (GIỮ NGUYÊN) ---
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html>
@@ -157,29 +154,23 @@ async def index():
 @app.post("/stream_download")
 async def stream_download(url: str = Form(...)):
     async def generate():
+        # Dọn dẹp file cũ
         current_time = time.time()
         for f in glob.glob(f'{TMP_DIR}/*'):
             try:
-                if os.path.isfile(f) and (current_time - os.path.getmtime(f)) > 1200: # Xóa sau 20p
+                if os.path.isfile(f) and (current_time - os.path.getmtime(f)) > 1200:
                     os.remove(f)
             except: pass
 
         unique_id = str(uuid.uuid4())[:8]
-        
-        # [TỐI ƯU 2] CẤU HÌNH YT-DLP TỐC ĐỘ CAO
+        queue = asyncio.Queue() # Hàng đợi để chuyển dữ liệu từ Thread ra HTTP
+        loop = asyncio.get_event_loop()
+
+        # Cấu hình yt-dlp
         ydl_opts = {
             'outtmpl': f'{TMP_DIR}/%(title).50s_{unique_id}.%(ext)s',
-            
-            # --- CHIẾN THUẬT CHỌN FILE ---
-            # 1. 'best[ext=mp4]': Tìm file MP4 tốt nhất có sẵn (thường là 720p). 
-            #    => KHÔNG CẦN GHÉP => CỰC NHANH.
-            # 2. '/best': Nếu không có, lấy bất kỳ file nào tốt nhất (WebM...).
-            # 3. Chỉ khi đường cùng mới tải rời (video+audio) để ghép.
             'format': 'best[ext=mp4]/best',
-            
-            # Nếu bắt buộc phải ghép (trường hợp hiếm), dùng preset 'ultrafast'
-            'postprocessor_args': ['-preset', 'ultrafast'], 
-
+            'postprocessor_args': ['-preset', 'ultrafast'],
             'trim_file_name': 50,
             'restrictfilenames': True,
             'noplaylist': True,
@@ -193,45 +184,64 @@ async def stream_download(url: str = Form(...)):
         if os.path.exists('cookies.txt') and os.path.getsize('cookies.txt') > 0:
             ydl_opts['cookiefile'] = 'cookies.txt'
 
-        try:
-            loop = asyncio.get_event_loop()
-            def run_yt_dlp():
-                def progress_hook(d):
-                    if d['status'] == 'downloading':
-                        p = d.get('_percent_str', '0%').replace('%','').strip()
-                        s = d.get('_speed_str', 'N/A')
-                        print(json.dumps({'status': 'downloading', 'percent': p, 'speed': s}))
+        def run_yt_dlp():
+            # Hook này chạy trong Thread riêng
+            def progress_hook(d):
+                if d['status'] == 'downloading':
+                    p = d.get('_percent_str', '0%').replace('%','').strip()
+                    s = d.get('_speed_str', 'N/A')
+                    # Đẩy dữ liệu vào hàng đợi (Queue) thay vì print
+                    data = json.dumps({'status': 'downloading', 'percent': p, 'speed': s}) + "\n"
+                    loop.call_soon_threadsafe(queue.put_nowait, data)
 
-                opts = ydl_opts.copy()
-                opts['progress_hooks'] = [progress_hook]
+            opts = ydl_opts.copy()
+            opts['progress_hooks'] = [progress_hook]
 
+            try:
                 with YoutubeDL(opts) as ydl:
                     ydl.download([url])
+                # Báo hiệu đã xong phần download
+                loop.call_soon_threadsafe(queue.put_nowait, "DOWNLOAD_FINISHED")
+            except Exception as e:
+                # Báo lỗi vào queue
+                error_msg = str(e)
+                if "Requested format is not available" in error_msg: error_msg = "Lỗi định dạng."
+                err_data = json.dumps({'status': 'error', 'message': error_msg}) + "\n"
+                loop.call_soon_threadsafe(queue.put_nowait, err_data)
+                loop.call_soon_threadsafe(queue.put_nowait, "STOP")
 
-            await loop.run_in_executor(None, run_yt_dlp)
+        # Chạy yt-dlp trong background thread
+        loop.run_in_executor(None, run_yt_dlp)
+
+        # Vòng lặp chính: Lấy dữ liệu từ Queue và gửi về trình duyệt
+        while True:
+            # Chờ dữ liệu từ queue
+            data = await queue.get()
             
-            search_pattern = f'{TMP_DIR}/*{unique_id}*'
-            found_files = glob.glob(search_pattern)
-            # Lọc bớt file rác
-            valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
+            if data == "STOP":
+                break
+                
+            if data == "DOWNLOAD_FINISHED":
+                # Tìm file kết quả sau khi tải xong
+                search_pattern = f'{TMP_DIR}/*{unique_id}*'
+                found_files = glob.glob(search_pattern)
+                valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl')]
 
-            if valid_files:
-                filename = os.path.basename(valid_files[0])
-                yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
-            else:
-                yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file.'}) + "\n"
-
-        except Exception as e:
-            error_msg = str(e)
-            if "Requested format is not available" in error_msg: error_msg = "Lỗi định dạng."
-            yield json.dumps({'status': 'error', 'message': error_msg}) + "\n"
+                if valid_files:
+                    filename = os.path.basename(valid_files[0])
+                    yield json.dumps({'status': 'finished', 'filename': filename}) + "\n"
+                else:
+                    yield json.dumps({'status': 'error', 'message': 'Không tìm thấy file.'}) + "\n"
+                break
+            
+            # Gửi dữ liệu tiến trình (percent, speed) về client
+            yield data
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 @app.get('/get_file/{filename}')
 async def get_file(filename: str):
     safe_path = os.path.join(TMP_DIR, filename)
-    # Bảo mật: Chỉ cho phép tải từ TMP_DIR
     if os.path.isfile(safe_path) and safe_path.startswith(TMP_DIR):
         return FileResponse(safe_path, filename=filename)
     return JSONResponse({"error": "File not found"}, status_code=404)
