@@ -1,6 +1,5 @@
 Flask
 gunicorn
 oauth2client
-# yt-dlp sẽ được Dockerfile cài từ git, nhưng để đây cho chắc
+gspread
 yt-dlp>=2024.08.01
-
