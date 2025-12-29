@@ -3,18 +3,21 @@ version: '3.8'
 services:
   yt-downloader:
     container_name: private-downloader
-    build: .  # Build từ thư mục hiện tại
+    build: .
     restart: unless-stopped
     ports:
-      - "5005:5000" # Map port 5005 của Armbian vào 5000 của Container
+      - "5005:5000"
     environment:
       - WORKERS=4
     volumes:
-      # (Tuỳ chọn) Mount thư mục cookies nếu sau này cần tải video membership/bị giới hạn tuổi
-      - ./cookies.txt:/app/cookies.txt
-    # Giới hạn tài nguyên để không treo Armbian (Tuỳ cấu hình máy bạn)
+      # --- SỬA QUAN TRỌNG TẠI ĐÂY ---
+      # Thay dấu chấm "." bằng đường dẫn tuyệt đối trên máy Armbian
+      # Docker sẽ luôn tìm đúng file này bất kể bạn deploy lại bao nhiêu lần
+      - /root/app_data/cookies.txt:/app/cookies.txt
+    
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '1.5'      # Tăng lên chút để xử lý nhanh hơn
+          memory: 2500M    # QUAN TRỌNG: Tăng lên 2.5GB. 
+                           # Để 512M là bị lỗi "Killed" ngay khi ghép video
