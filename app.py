@@ -32,7 +32,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pro Downloader V5 (Anti-Throttle)</title>
+    <title>Pro Downloader V6 (Stable)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, sans-serif; background: #f2f2f7; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -55,7 +55,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <img src="/static/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
-        <h2>Server Downloader V5</h2>
+        <h2>Server Downloader V6</h2>
         
         <div id="inputArea">
             <div class="input-group">
@@ -153,20 +153,23 @@ def download_worker(task_id, url, mode):
             'cookiefile': 'cookies.txt',
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
+            'http_chunk_size': 10485760, # Tải từng gói 10MB
+            'retries': 30,
+            'socket_timeout': 30,
             
-            # --- CẤU HÌNH CHỐNG THROTTLING (BÓP BĂNG THÔNG) ---
-            'http_chunk_size': 10485760,  # 10MB: Tải từng gói nhỏ thay vì tải 1 cục
-            'retries': 50,                # Thử lại 50 lần nếu rớt mạng
-            'fragment_retries': 50,       # Thử lại 50 lần nếu lỗi file con
-            'socket_timeout': 15,         # Nếu server im lặng 15s thì cắt kết nối tải lại ngay (tránh treo Unknown B/s)
+            # --- QUAN TRỌNG: CẤU HÌNH KHÔI PHỤC (KHÔNG DÙNG ANDROID CLIENT NỮA) ---
+            # Xóa dòng extractor_args cũ gây lỗi
             
-            # Tự động fix lỗi nếu file bị kẹt ở .part
-            'fixup': 'detect_or_warn', 
-            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            # Dùng User-Agent của PC để ít bị nghi ngờ
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
         }
 
         if mode == 'mp4_convert':
-            save_status(task_id, {'status': 'processing', 'message': 'Đang tải và Convert MP4...'})
+            save_status(task_id, {'status': 'processing', 'message': 'Đang tải & Convert MP4...'})
             ydl_opts.update({
                 'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                 'merge_output_format': 'mp4',
@@ -181,8 +184,6 @@ def download_worker(task_id, url, mode):
         else:
             save_status(task_id, {'status': 'processing', 'message': 'Đang tải 4K & Ghép file...'})
             ydl_opts.update({
-                # Thay đổi: Ưu tiên Android Client để tải 4K ổn định hơn Web Client
-                'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mkv',
                 'postprocessor_args': ['-preset', 'ultrafast'],
@@ -191,7 +192,7 @@ def download_worker(task_id, url, mode):
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # --- LOGIC TÌM FILE THÔNG MINH ---
+        # Tìm file kết quả
         search_pattern = f'{TMP_DIR}/*{task_id}*'
         found_files = glob.glob(search_pattern)
         valid_files = [f for f in found_files if not f.endswith('.part') and not f.endswith('.ytdl') and not f.endswith('.json')]
@@ -200,21 +201,19 @@ def download_worker(task_id, url, mode):
             filename = os.path.basename(valid_files[0])
             save_status(task_id, {'status': 'done', 'filename': filename})
         else:
-            # Cứu file .part nếu tải gần xong mà bị ngắt
+            # Cứu file .part
             part_files = [f for f in found_files if f.endswith('.part')]
             if part_files:
-                part_file = part_files[0]
-                new_name = part_file.replace('.part', '')
                 try:
-                    os.rename(part_file, new_name)
+                    new_name = part_files[0].replace('.part', '')
+                    os.rename(part_files[0], new_name)
                     save_status(task_id, {'status': 'done', 'filename': os.path.basename(new_name)})
-                except Exception as e:
-                    save_status(task_id, {'status': 'error', 'message': f'Lỗi đổi tên file: {str(e)}'})
+                except: save_status(task_id, {'status': 'error', 'message': 'Lỗi đổi tên file'})
             else:
-                save_status(task_id, {'status': 'error', 'message': 'Lỗi: Không tìm thấy file kết quả.'})
+                save_status(task_id, {'status': 'error', 'message': 'Không tìm thấy file (Bị chặn hoặc lỗi Cookies)'})
 
     except Exception as e:
-        save_status(task_id, {'status': 'error', 'message': f'Lỗi hệ thống: {str(e)}'})
+        save_status(task_id, {'status': 'error', 'message': f'Lỗi: {str(e)}'})
 
 @app.route('/')
 def index():
