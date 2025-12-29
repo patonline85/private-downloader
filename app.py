@@ -90,7 +90,7 @@ HTML_TEMPLATE = """
         </div>
         
         <p id="errorText" class="error-msg"></p>
-        <p class="note">Server Home Lab • Bình An & Tiện Lợi</p>
+        <p class="note">PMTL.SITE • BÌNH AN & TIỆN LỢI</p>
     </div>
 
     <script>
@@ -281,5 +281,6 @@ def get_file(filename):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
