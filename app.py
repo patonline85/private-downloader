@@ -70,33 +70,73 @@ def cleanup_old_files():
 # --- GIAO DIỆN ĐĂNG NHẬP ---
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
+    <meta charset="UTF-8">
     <title>Đăng Nhập - Pháp Môn Tâm Linh</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-    <style>
-        :root { --bg-color: #f4f1ea; --card-bg: #ffffff; --accent-color: #5d4037; --text-color: #4e342e; --border-radius: 12px; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); display: flex; justify-content: center; align-items: center; min-height: 100dvh; margin: 0; color: var(--text-color); }
-        .container { background: var(--card-bg); padding: 40px 30px; border-radius: var(--border-radius); box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); width: 90%; max-width: 400px; border-top: 5px solid var(--accent-color); text-align: center; }
-        h2 { color: var(--accent-color); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-        .sub-title { font-size: 14px; color: #8d6e63; margin-bottom: 30px; font-style: italic; }
-        input { width: 100%; padding: 14px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); box-sizing: border-box; font-size: 16px; margin-bottom: 20px; outline: none; background: #fafafa; }
-        input:focus { border-color: var(--accent-color); background: #fff; }
-        button { background: var(--accent-color); color: white; border: none; padding: 16px; border-radius: var(--border-radius); cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 10px rgba(93, 64, 55, 0.3); }
-        button:hover { background: #3e2723; transform: translateY(-1px); }
-        .error { color: #c62828; margin-top: 15px; background: #ffebee; padding: 10px; border-radius: 8px; font-size: 0.9em; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='logo.png') }}" type="image/png">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        paper: '#F9F7F2',
+                        ink: '#5D2E2E',
+                        clay: '#8C4A4A',
+                        clayHover: '#7A3E3E',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    boxShadow: {
+                        'paper': '0 4px 20px -2px rgba(93, 46, 46, 0.1)',
+                        'float': '0 10px 30px -5px rgba(140, 74, 74, 0.4)',
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body>
-    <div class="container">
-        <h2>Pháp Môn Tâm Linh</h2>
-        <p class="sub-title">Vui lòng đăng nhập để tiếp tục</p>
-        <form method="POST">
-            <input type="email" name="email" placeholder="Nhập địa chỉ Email..." required>
-            <button type="submit">Đăng Nhập</button>
+<body class="bg-paper text-ink font-sans min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-paper p-8 md:p-10 relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-2 bg-clay"></div>
+        
+        <div class="text-center mb-8">
+            <h2 class="text-2xl font-bold uppercase tracking-widest text-clay mb-2">Pháp Môn Tâm Linh</h2>
+            <p class="text-ink/60 italic text-sm">Vui lòng đăng nhập để tiếp tục</p>
+        </div>
+
+        <form method="POST" class="space-y-6">
+            <div class="space-y-2">
+                <label class="text-sm font-semibold text-ink/80 ml-1">Email Thành Viên</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-envelope text-clay/50"></i>
+                    </div>
+                    <input type="email" name="email" 
+                        class="w-full bg-paper border border-transparent focus:border-clay focus:bg-white focus:ring-0 rounded-xl py-3 pl-11 pr-4 text-ink placeholder-ink/30 transition-all duration-300 outline-none" 
+                        placeholder="example@gmail.com" required>
+                </div>
+            </div>
+
+            <button type="submit" 
+                class="w-full bg-clay text-white font-bold py-4 rounded-2xl shadow-float hover:-translate-y-1 hover:bg-clayHover active:scale-95 transition-all duration-300 flex items-center justify-center gap-2">
+                <span>Đăng Nhập</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
         </form>
+
         {% if error %}
-        <div class="error">{{ error }}</div>
+        <div class="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 animate-pulse">
+            <i class="fa-solid fa-circle-exclamation text-red-500 mt-1"></i>
+            <p class="text-red-600 text-sm font-medium">{{ error }}</p>
+        </div>
         {% endif %}
     </div>
 </body>
@@ -106,114 +146,226 @@ LOGIN_TEMPLATE = """
 # --- GIAO DIỆN CHÍNH ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
+    <meta charset="UTF-8">
     <title>Pháp Môn Tâm Linh 心靈法門</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-    <style>
-        :root {
-            --bg-color: #f4f1ea; --card-bg: #ffffff; --primary-color: #8d6e63; --accent-color: #5d4037; --text-color: #4e342e; --success-color: #689f38; --border-radius: 12px;
-        }
-        body { 
-            font-family: 'Segoe UI', sans-serif; background: var(--bg-color); display: flex; justify-content: center; align-items: flex-start; min-height: 100dvh; margin: 0; color: var(--text-color); padding-top: 40px; box-sizing: border-box;
-        }
-        .container { 
-            background: var(--card-bg); padding: 30px; border-radius: var(--border-radius); box-shadow: 0 8px 30px rgba(93, 64, 55, 0.15); width: 90%; max-width: 480px; border-top: 5px solid var(--accent-color); margin-bottom: 40px; 
-        }
-        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .logo-wrapper { flex-grow: 1; text-align: center; } 
-        .logout-btn { font-size: 12px; color: #a1887f; text-decoration: none; border: 1px solid #d7ccc8; padding: 4px 10px; border-radius: 15px; transition: 0.2s; }
-        .logout-btn:hover { background: #efebe9; color: var(--accent-color); }
-        .spacer { width: 50px; } 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='logo.png') }}" type="image/png">
 
-        .logo-img { max-width: 100px; height: auto; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        h2 { text-align: center; color: var(--accent-color); margin-bottom: 25px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
-        .input-group { position: relative; margin-bottom: 20px; }
-        input[type="text"] { width: 100%; padding: 14px 90px 14px 15px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); box-sizing: border-box; font-size: 16px; outline: none; transition: 0.3s; background: #fafafa; }
-        input[type="text"]:focus { border-color: var(--primary-color); background: #fff; }
-        .action-btns { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 5px; }
-        .icon-btn { background: #efebe9; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--accent-color); font-weight: bold; }
-        .icon-btn:hover { background: #d7ccc8; }
-        select { width: 100%; padding: 14px; border: 2px solid #e0e0e0; border-radius: var(--border-radius); background: #fff; font-size: 16px; margin-bottom: 20px; color: var(--text-color); }
-        button#submitBtn { background: var(--accent-color); color: white; border: none; padding: 16px; border-radius: var(--border-radius); cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 10px rgba(93, 64, 55, 0.3); }
-        button#submitBtn:hover { background: #3e2723; transform: translateY(-1px); }
-        button#submitBtn:disabled { background: #bdbdbd; cursor: not-allowed; transform: none; box-shadow: none; }
-        .progress-container { margin-top: 25px; display: none; }
-        .progress-bg { width: 100%; background-color: #efebe9; border-radius: 20px; height: 10px; overflow: hidden; }
-        .progress-bar { height: 100%; width: 0%; background-color: var(--success-color); transition: width 0.3s ease; }
-        .status-text { text-align: center; font-size: 0.9em; color: var(--primary-color); margin-top: 8px; font-style: italic; }
-        #downloadArea { display: none; margin-top: 25px; text-align: center; border-top: 1px dashed #d7ccc8; padding-top: 20px; }
-        .save-btn { display: inline-block; padding: 14px 35px; background: var(--success-color); color: white; text-decoration: none; border-radius: var(--border-radius); font-weight: bold; font-size: 16px; box-shadow: 0 4px 10px rgba(104, 159, 56, 0.3); }
-        .save-btn:hover { background: #558b2f; }
-        .error-msg { color: #c62828; text-align: center; margin-top: 15px; display: none; background: #ffebee; padding: 12px; border-radius: 8px; font-size: 0.9em; }
-        .note { font-size: 12px; color: #a1887f; margin-top: 25px; text-align: center; }
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #F9F7F2; }
+        ::-webkit-scrollbar-thumb { background: #8C4A4A; border-radius: 10px; }
     </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header-row">
-            <div class="spacer"></div>
-            <div class="logo-wrapper">
-                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="logo-img">
-            </div>
-            <a href="/logout" class="logout-btn">Thoát</a>
-        </div>
-        <h2>Pháp Môn Tâm Linh 心靈法門</h2>
-        
-        <div class="input-group">
-            <input type="text" id="url" placeholder="Dán liên kết vào đây..." required>
-            <div class="action-btns">
-                <button type="button" class="icon-btn" onclick="pasteLink()">Dán</button>
-                <button type="button" class="icon-btn" onclick="clearLink()">Xóa</button>
-            </div>
-        </div>
-        <select id="mode">
-            <option value="mp4_convert">📱 Tải Video (MP4 - Xem trên mọi thiết bị)</option>
-            <option value="audio_only">🎧 Tải Âm Thanh (MP3 - Nghe đài)</option>
-        </select>
-        <button id="submitBtn" onclick="startDownload()">Bắt Đầu Tải Về</button>
-        <div class="progress-container" id="progressArea">
-            <div class="progress-bg">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
-            <div class="status-text" id="statusText">Đang kết nối...</div>
-        </div>
-        <div id="downloadArea">
-            <p style="color: var(--success-color); font-weight: bold;">✅ Đã hoàn tất!</p>
-            <a href="#" id="finalLink" class="save-btn" onclick="resetUI()">Lưu Về Máy</a>
-        </div>
-        <p id="errorText" class="error-msg"></p>
-        <p class="note"> • Bình An & Tiện Lợi • </p>
-    </div>
     <script>
-        async function pasteLink() { try { document.getElementById('url').value = await navigator.clipboard.readText(); } catch (err) { alert('Vui lòng dán thủ công'); } }
-        function clearLink() { document.getElementById('url').value = ''; document.getElementById('progressArea').style.display = 'none'; document.getElementById('downloadArea').style.display = 'none'; document.getElementById('errorText').style.display = 'none'; document.getElementById('submitBtn').disabled = false; }
-        function resetUI() { setTimeout(() => { clearLink(); }, 3000); }
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        paper: '#F9F7F2',
+                        ink: '#5D2E2E',
+                        clay: '#8C4A4A',
+                        clayHover: '#7A3E3E',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    boxShadow: {
+                        'paper': '0 4px 20px -2px rgba(93, 46, 46, 0.1)',
+                        'float': '0 10px 30px -5px rgba(140, 74, 74, 0.4)',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-paper text-ink font-sans min-h-screen py-8 px-4 flex justify-center items-start">
+    
+    <div class="w-full max-w-2xl">
+        <div class="flex justify-between items-center mb-8 px-2">
+            <div class="w-14 h-14 bg-white rounded-full shadow-float flex items-center justify-center overflow-hidden border-2 border-clay/10 p-1">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="w-full h-full object-cover rounded-full">
+            </div>
+            
+            <a href="/logout" class="group flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm hover:shadow-md transition-all duration-300">
+                <span class="text-xs font-semibold text-ink/70 group-hover:text-clay">Thoát</span>
+                <i class="fa-solid fa-arrow-right-from-bracket text-clay text-sm"></i>
+            </a>
+        </div>
+
+        <div class="bg-white rounded-3xl shadow-paper p-6 md:p-10 relative">
+            <div class="text-center mb-10">
+                <h2 class="text-3xl font-bold text-ink mb-2 tracking-tight">Pháp Môn Tâm Linh</h2>
+                <p class="text-clay font-serif italic text-lg">心靈法門</p>
+            </div>
+
+            <div class="space-y-6">
+                <div class="relative group">
+                    <input type="text" id="url" 
+                        class="w-full bg-paper border-2 border-transparent focus:border-clay/30 rounded-2xl py-4 pl-12 pr-24 text-ink placeholder-ink/40 font-medium outline-none transition-all duration-300"
+                        placeholder="Dán liên kết YouTube/Facebook...">
+                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-clay/60">
+                        <i class="fa-solid fa-link"></i>
+                    </div>
+                    <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                        <button onclick="pasteLink()" class="p-2 hover:bg-white rounded-xl text-xs font-bold text-clay transition-colors" title="Dán">
+                            DÁN
+                        </button>
+                        <button onclick="clearLink()" class="p-2 hover:bg-white rounded-xl text-xs font-bold text-ink/40 hover:text-red-500 transition-colors" title="Xóa">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-clay/60 z-10">
+                        <i class="fa-solid fa-sliders"></i>
+                    </div>
+                    <select id="mode" class="w-full bg-paper border-r-[16px] border-transparent rounded-2xl py-4 pl-12 text-ink font-medium outline-none appearance-none cursor-pointer hover:bg-paper/80 transition-colors relative z-0">
+                        <option value="mp4_convert">📱 Tải Video (MP4 - Tương thích cao)</option>
+                        <option value="audio_only">🎧 Tải Âm Thanh (MP3 - Nghe đài)</option>
+                    </select>
+                </div>
+
+                <button id="submitBtn" onclick="startDownload()" 
+                    class="w-full bg-clay text-white text-lg font-bold py-5 rounded-2xl shadow-float hover:-translate-y-1 hover:bg-clayHover active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none transition-all duration-300 flex items-center justify-center gap-3">
+                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                    <span>Bắt Đầu Tải Về</span>
+                </button>
+            </div>
+
+            <div id="progressArea" class="hidden mt-8 p-6 bg-paper rounded-2xl border border-clay/10">
+                <div class="flex justify-between items-end mb-2">
+                    <span class="text-xs font-bold text-clay uppercase tracking-wider">Tiến độ</span>
+                    <span id="statusText" class="text-xs font-mono text-ink/70">Đang kết nối...</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div id="progressBar" class="bg-clay h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="downloadArea" class="hidden mt-8 text-center animate-bounce-in">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full text-green-600 mb-4 shadow-sm">
+                    <i class="fa-solid fa-check text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-ink mb-6">Xử lý hoàn tất!</h3>
+                <a href="#" id="finalLink" onclick="resetUI()" 
+                    class="inline-flex items-center gap-2 bg-ink text-white px-8 py-3 rounded-xl font-semibold shadow-lg hover:bg-clay transition-all duration-300">
+                    <i class="fa-solid fa-download"></i>
+                    <span>Lưu File Về Máy</span>
+                </a>
+            </div>
+
+            <div id="errorText" class="hidden mt-6 p-4 bg-red-50 text-red-700 text-sm rounded-xl border border-red-100 text-center font-medium"></div>
+
+            <div class="mt-10 text-center">
+                <p class="text-xs text-ink/40 font-serif italic">• Bình An & Tiện Lợi •</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function pasteLink() { 
+            try { 
+                const text = await navigator.clipboard.readText();
+                document.getElementById('url').value = text; 
+            } catch (err) { 
+                alert('Vui lòng dán thủ công.'); 
+            } 
+        }
+
+        function clearLink() { 
+            document.getElementById('url').value = ''; 
+            resetUIState();
+        }
+
+        function resetUIState() {
+            document.getElementById('progressArea').classList.add('hidden');
+            document.getElementById('downloadArea').classList.add('hidden');
+            document.getElementById('errorText').classList.add('hidden');
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i><span>Bắt Đầu Tải Về</span>';
+        }
+
+        function resetUI() { 
+            setTimeout(() => { clearLink(); }, 3000); 
+        }
+
         async function startDownload() {
             const url = document.getElementById('url').value;
             const mode = document.getElementById('mode').value;
-            if (!url) return alert("Bạn chưa nhập liên kết!");
-            const btn = document.getElementById('submitBtn'); const progressArea = document.getElementById('progressArea'); const progressBar = document.getElementById('progressBar'); const statusText = document.getElementById('statusText'); const downloadArea = document.getElementById('downloadArea'); const errorText = document.getElementById('errorText');
-            btn.disabled = true; btn.innerText = "⏳ Đang xử lý..."; downloadArea.style.display = 'none'; errorText.style.display = 'none'; progressArea.style.display = 'block'; progressBar.style.width = '5%'; statusText.innerText = 'Đang khởi động...';
-            const formData = new FormData(); formData.append('url', url); formData.append('mode', mode);
+            
+            if (!url) return alert("Vui lòng dán liên kết video!");
+            
+            const btn = document.getElementById('submitBtn');
+            const progressArea = document.getElementById('progressArea');
+            const progressBar = document.getElementById('progressBar');
+            const statusText = document.getElementById('statusText');
+            const downloadArea = document.getElementById('downloadArea');
+            const errorText = document.getElementById('errorText');
+
+            downloadArea.classList.add('hidden');
+            errorText.classList.add('hidden');
+            progressArea.classList.remove('hidden');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Đang xử lý...</span>';
+            progressBar.style.width = '5%';
+            statusText.innerText = 'Đang khởi động server...';
+
+            const formData = new FormData(); 
+            formData.append('url', url); 
+            formData.append('mode', mode);
+
             try {
                 const response = await fetch('/stream_download', { method: 'POST', body: formData });
-                const reader = response.body.getReader(); const decoder = new TextDecoder();
+                const reader = response.body.getReader(); 
+                const decoder = new TextDecoder();
+
                 while (true) {
-                    const { value, done } = await reader.read(); if (done) break;
-                    const chunk = decoder.decode(value); const lines = chunk.split('\\n');
+                    const { value, done } = await reader.read(); 
+                    if (done) break;
+                    const chunk = decoder.decode(value); 
+                    const lines = chunk.split('\\n');
+
                     for (const line of lines) {
                         if (!line.trim()) continue;
                         try {
                             const data = JSON.parse(line);
-                            if (data.status === 'downloading') { progressBar.style.width = data.percent + '%'; statusText.innerText = `Đang tải: ${data.percent}% (${data.speed})`; }
-                            else if (data.status === 'merging') { progressBar.style.width = '98%'; statusText.innerText = 'Đang ghép file... (Vui lòng đợi)'; }
-                            else if (data.status === 'finished') { progressBar.style.width = '100%'; statusText.innerText = 'Thành công!'; document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename); downloadArea.style.display = 'block'; btn.innerText = "Tải File Khác"; btn.disabled = false; }
+                            if (data.status === 'downloading') { 
+                                progressBar.style.width = data.percent + '%'; 
+                                statusText.innerText = `Đang tải: ${data.percent}% (${data.speed})`; 
+                            }
+                            else if (data.status === 'merging') { 
+                                progressBar.style.width = '98%'; 
+                                statusText.innerText = 'Đang ghép file...'; 
+                            }
+                            else if (data.status === 'finished') { 
+                                progressBar.style.width = '100%'; 
+                                statusText.innerText = 'Hoàn tất!'; 
+                                document.getElementById('finalLink').href = '/get_file/' + encodeURIComponent(data.filename); 
+                                downloadArea.classList.remove('hidden');
+                                progressArea.classList.add('hidden');
+                                btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i><span>Tải File Khác</span>';
+                                btn.disabled = false; 
+                            }
                             else if (data.status === 'error') { throw new Error(data.message); }
                         } catch (err) { if (err.message && !err.message.includes("JSON")) throw err; }
                     }
                 }
-            } catch (error) { errorText.innerText = "Lỗi: " + error.message; errorText.style.display = 'block'; btn.disabled = false; btn.innerText = "Thử Lại"; progressArea.style.display = 'none'; }
+            } catch (error) { 
+                errorText.innerText = "Lỗi: " + error.message; 
+                errorText.classList.remove('hidden');
+                btn.disabled = false; 
+                btn.innerHTML = 'Thử Lại';
+                progressArea.classList.add('hidden'); 
+            }
         }
     </script>
 </body>
