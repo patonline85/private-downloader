@@ -419,18 +419,19 @@ def stream_download():
             elif d['status'] == 'finished':
                 yield json.dumps({'status': 'merging'}) + "\n"
 
-        # --- CẤU HÌNH FIX LỖI "FILE NAME TOO LONG" (TRIỆT ĐỂ) ---
+        # --- CẤU HÌNH FIX LỖI "FILE NAME TOO LONG" VÀ THÊM COOKIES ---
         ydl_opts = {
-            # QUAN TRỌNG: %(title).30s nghĩa là chỉ lấy 30 ký tự đầu của tiêu đề
-            # Thêm %(id)s để đảm bảo không bị trùng file nếu tiêu đề giống nhau
             'outtmpl': '/tmp/%(title).30s-%(id)s.%(ext)s',
-            
             'restrictfilenames': False,
             'noplaylist': True,
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'quiet': True,
             'progress_hooks': [progress_hook],
-            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            # THÊM DÒNG NÀY ĐỂ ĐỌC COOKIES TỪ DOCKER VOLUME
+            'cookiefile': '/app/cookies.txt'
         }
 
         if mode == 'mp4_convert':
