@@ -435,7 +435,11 @@ def stream_download():
         }
 
         if mode == 'mp4_convert':
-             ydl_opts.update({'format': 'bv*[vcodec^=avc]+ba[ext=m4a]/b[ext=mp4]/b', 'merge_output_format': 'mp4'})
+            # Ưu tiên MP4 tốt nhất, nếu không có thì lấy bất kỳ định dạng nào tốt nhất rồi convert sang MP4
+            ydl_opts.update({
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 
+                'merge_output_format': 'mp4'
+            })
         elif mode == 'audio_only':
             ydl_opts.update({'format': 'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],})
         else: 
