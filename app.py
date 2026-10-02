@@ -14,19 +14,19 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'phap_mon_tam_linh_secret_ke
 SHEET_ID = os.environ.get('GOOGLE_SHEET_ID')
 SHEET_TAB_NAME = 'Users'
 
-def get_allowed_emails():
-    """Kết nối Google Sheet và lấy danh sách email được phép"""
+def get_user_credentials():
+    """Kết nối Google Sheet và lấy danh sách tài khoản (email: password)"""
     try:
         if not SHEET_ID:
             print("Lỗi: Chưa cấu hình biến môi trường GOOGLE_SHEET_ID")
-            return []
+            return {}
 
         private_key = os.environ.get('GOOGLE_PRIVATE_KEY', '').replace('\\n', '\n')
         client_email = os.environ.get('GOOGLE_SERVICE_ACCOUNT_EMAIL', '')
         
         if not private_key or not client_email:
             print("Lỗi: Thiếu biến môi trường Key hoặc Email Service Account")
-            return []
+            return {}
 
         creds_dict = {
             "type": "service_account",
@@ -46,11 +46,23 @@ def get_allowed_emails():
         client = gspread.authorize(creds)
         
         sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_TAB_NAME)
-        emails = sheet.col_values(1)
-        return [e.strip().lower() for e in emails if '@' in e]
+        
+        # MỞ RỘNG: Lấy dữ liệu từ cột A đến cột D
+        rows = sheet.get('A:D')
+        
+        users = {}
+        for row in rows:
+            # Kiểm tra nếu dòng có email
+            if len(row) > 0 and '@' in row[0]:
+                email = row[0].strip().lower()
+                # Lấy mật khẩu ở cột D (index 3), nếu cột D trống thì để pass rỗng
+                password = row[3].strip() if len(row) > 3 else ""
+                users[email] = password
+                
+        return users
     except Exception as e:
         print(f"Lỗi kết nối Google Sheet: {str(e)}")
-        return []
+        return {}
 
 # --- HÀM DỌN DẸP THÔNG MINH (CHỈ XÓA FILE CŨ > 60 PHÚT) ---
 def cleanup_old_files():
@@ -108,6 +120,8 @@ LOGIN_TEMPLATE = """
         <div class="absolute top-0 left-0 w-full h-2 bg-clay"></div>
         
         <div class="text-center mb-8">
+            <!-- Thêm Logo -->
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Pháp Môn Tâm Linh" class="h-20 w-auto mx-auto mb-4 object-contain">
             <h2 class="text-2xl font-bold uppercase tracking-widest text-clay mb-2">Pháp Môn Tâm Linh</h2>
             <p class="text-ink/60 italic text-sm">Vui lòng đăng nhập để tiếp tục</p>
         </div>
@@ -122,6 +136,19 @@ LOGIN_TEMPLATE = """
                     <input type="email" name="email" 
                         class="w-full bg-paper border border-transparent focus:border-clay focus:bg-white focus:ring-0 rounded-xl py-3 pl-11 pr-4 text-ink placeholder-ink/30 transition-all duration-300 outline-none" 
                         placeholder="example@gmail.com" required>
+                </div>
+            </div>
+
+            <!-- THÊM Ô NHẬP MẬT KHẨU -->
+            <div class="space-y-2">
+                <label class="text-sm font-semibold text-ink/80 ml-1">Mật khẩu</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-lock text-clay/50"></i>
+                    </div>
+                    <input type="password" name="password" 
+                        class="w-full bg-paper border border-transparent focus:border-clay focus:bg-white focus:ring-0 rounded-xl py-3 pl-11 pr-4 text-ink placeholder-ink/30 transition-all duration-300 outline-none" 
+                        placeholder="Nhập mật khẩu..." required>
                 </div>
             </div>
 
@@ -378,15 +405,27 @@ def login():
     error = None
     if request.method == 'POST':
         email_input = request.form.get('email', '').strip().lower()
-        if not email_input: error = "Vui lòng nhập địa chỉ email."
+        password_input = request.form.get('password', '').strip() # Đọc mật khẩu gửi lên
+
+        if not email_input or not password_input: 
+            error = "Vui lòng nhập đầy đủ email và mật khẩu."
         else:
-            allowed_users = get_allowed_emails()
-            if not allowed_users: error = "Không kết nối được danh sách thành viên (Lỗi ID/Key)."
-            elif email_input in allowed_users:
-                session['user'] = email_input
-                session.permanent = True
-                return redirect(url_for('index'))
-            else: error = "Email này chưa được cấp quyền truy cập."
+            # Lấy dữ liệu từ Sheet (thay vì get_allowed_emails)
+            user_credentials = get_user_credentials()
+            
+            if not user_credentials: 
+                error = "Không kết nối được danh sách thành viên (Lỗi ID/Key)."
+            elif email_input in user_credentials:
+                # Kiểm tra mật khẩu
+                if user_credentials[email_input] == password_input:
+                    session['user'] = email_input
+                    session.permanent = True
+                    return redirect(url_for('index'))
+                else:
+                    error = "Mật khẩu không chính xác."
+            else: 
+                error = "Email này chưa được cấp quyền truy cập."
+                
     return render_template_string(LOGIN_TEMPLATE, error=error)
 
 @app.route('/logout')
